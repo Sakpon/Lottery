@@ -32,13 +32,19 @@ jobs:
       - name: Ensure Pages project exists
         run: |
           set -euo pipefail
-          if ! npx wrangler pages project list --json | jq -e '.[] | select(.name=="lottery-th")' > /dev/null; then
+          status=$(curl -sS -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/lottery-th")
+          if [ "$status" = "404" ]; then
             echo "Creating Pages project lottery-th..."
             npx wrangler pages project create lottery-th \
               --production-branch=main \
               --compatibility-date=2025-01-01
-          else
+          elif [ "$status" = "200" ]; then
             echo "Pages project lottery-th already exists"
+          else
+            echo "::error::Unexpected HTTP $status from pages/projects/lottery-th"
+            exit 1
           fi
 
       - name: Ensure API_BASE env var is set
