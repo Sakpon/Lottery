@@ -82,21 +82,32 @@ async function runBackfill(env: Env, years: number): Promise<number> {
   const dates = enumerateDrawDates(years);
   let added = 0;
   let errors = 0;
+  let consecutiveErrors = 0;
+  let nullParses = 0;
 
   for (const date of dates) {
     try {
       const n = await fetchAndStoreByDate(env, date);
       added += n;
+      if (n === 0) nullParses += 1;
+      consecutiveErrors = 0;
       // throttle: ให้เกียรติ host เป็นคนดี
       await sleep(800 + Math.random() * 400);
     } catch (e) {
       errors += 1;
-      // เงียบ ๆ ต่อไป เก็บ log ไว้
+      consecutiveErrors += 1;
       await logScrape(env.DB, "backfill", "error", 0, `${date}: ${(e as Error).message}`);
-      if (errors > 20) break; // safety
+      // safety: ถ้าเจอ error ติด ๆ กันเยอะ ๆ อาจโดน block — หยุด
+      if (consecutiveErrors > 30) break;
     }
   }
-  await logScrape(env.DB, "backfill", "ok", added, `years=${years} errors=${errors}`);
+  await logScrape(
+    env.DB,
+    "backfill",
+    "ok",
+    added,
+    `years=${years} tried=${dates.length} added=${added} nullParses=${nullParses} errors=${errors}`,
+  );
   return added;
 }
 
