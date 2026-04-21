@@ -14,7 +14,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ensure-d1:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    outputs:
+      d1_id: ${{ steps.d1.outputs.d1_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --no-audit --no-fund
+
+      - name: Resolve or create D1 (idempotent)
+        id: d1
+        run: |
+          set -euo pipefail
+          existing=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="lottery_th") | .uuid' || true)
+          if [ -z "${existing:-}" ] || [ "$existing" = "null" ]; then
+            echo "D1 lottery_th not found — creating..."
+            created=$(npx wrangler d1 create lottery_th --json)
+            id=$(echo "$created" | jq -r '.uuid')
+            # apply schema ทันทีที่สร้างใหม่
+            sed -i "s/REPLACE_WITH_D1_ID/$id/g" workers/api/wrangler.toml workers/scraper/wrangler.toml
+            npx wrangler d1 execute lottery_th --remote --file=data/schema/schema.sql
+          else
+            echo "D1 lottery_th already exists: $existing"
+            id="$existing"
+          fi
+          echo "d1_id=$id" >> "$GITHUB_OUTPUT"
+
   deploy:
+    needs: ensure-d1
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -30,20 +64,9 @@ jobs:
           cache: "npm"
       - run: npm ci --no-audit --no-fund
 
-      - name: Resolve D1 ID
-        id: d1
-        run: |
-          set -euo pipefail
-          id=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="lottery_th") | .uuid')
-          if [ -z "$id" ] || [ "$id" = "null" ]; then
-            echo "::error::D1 database 'lottery_th' not found — run the Bootstrap workflow first"
-            exit 1
-          fi
-          echo "d1_id=$id" >> "$GITHUB_OUTPUT"
-
       - name: Inject D1 ID into wrangler.toml
         run: |
-          sed -i "s/REPLACE_WITH_D1_ID/${{ steps.d1.outputs.d1_id }}/g" \
+          sed -i "s/REPLACE_WITH_D1_ID/${{ needs.ensure-d1.outputs.d1_id }}/g" \
             workers/${{ matrix.worker }}/wrangler.toml
 
       - name: Deploy ${{ matrix.worker }}
