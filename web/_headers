@@ -3,10 +3,13 @@
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: geolocation=(), microphone=(), camera=()
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://lottery-th-api.*.workers.dev; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.workers.dev; frame-ancestors 'none'
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+/assets/js/config.js
+  Cache-Control: public, max-age=60, must-revalidate
 
 /manifest.webmanifest
   Content-Type: application/manifest+json
