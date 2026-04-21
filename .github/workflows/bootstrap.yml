@@ -1,0 +1,188 @@
+name: Bootstrap (one-click full deploy + backfill)
+
+# รันครั้งเดียวหลัง merge เข้า main — จะทำทั้งหมดนี้:
+#   1. สร้าง D1 database + schema
+#   2. สร้าง Pages project ถ้ายังไม่มี
+#   3. Deploy API + Scraper Workers
+#   4. สุ่มค่า ADMIN_TOKEN และตั้งเป็น secret ของ Scraper Worker
+#   5. ตั้ง Pages env var API_BASE ผ่าน Cloudflare API
+#   6. Deploy Pages
+#   7. เรียก /backfill ย้อนหลัง 20 ปีทันที
+#
+# ต้องมี secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+
+on:
+  workflow_dispatch:
+    inputs:
+      backfill_years:
+        description: "จำนวนปีย้อนหลังที่จะ backfill หลัง deploy"
+        required: true
+        default: "20"
+        type: string
+
+concurrency:
+  group: bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --no-audit --no-fund
+
+      - name: Resolve or create D1 database
+        id: d1
+        run: |
+          set -euo pipefail
+          existing=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="lottery_th") | .uuid' || true)
+          if [ -z "${existing:-}" ] || [ "$existing" = "null" ]; then
+            echo "Creating D1 database lottery_th..."
+            created=$(npx wrangler d1 create lottery_th --json)
+            id=$(echo "$created" | jq -r '.uuid')
+          else
+            echo "D1 lottery_th already exists: $existing"
+            id="$existing"
+          fi
+          echo "d1_id=$id" >> "$GITHUB_OUTPUT"
+
+      - name: Inject D1 ID into wrangler.toml files
+        run: |
+          sed -i "s/REPLACE_WITH_D1_ID/${{ steps.d1.outputs.d1_id }}/g" \
+            workers/api/wrangler.toml \
+            workers/scraper/wrangler.toml
+
+      - name: Apply schema (idempotent — CREATE IF NOT EXISTS)
+        run: npx wrangler d1 execute lottery_th --remote --file=data/schema/schema.sql
+
+      - name: Deploy API Worker
+        id: api
+        run: |
+          set -euo pipefail
+          out=$(npx wrangler deploy --config workers/api/wrangler.toml 2>&1)
+          echo "$out"
+          url=$(printf '%s' "$out" | grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' | head -1 || true)
+          if [ -z "$url" ]; then
+            # fallback: สร้าง URL จาก account subdomain
+            sub=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+              | jq -r '.result.subdomain')
+            url="https://lottery-th-api.${sub}.workers.dev"
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "API Worker URL: $url"
+
+      - name: Deploy Scraper Worker
+        id: scraper
+        run: |
+          set -euo pipefail
+          out=$(npx wrangler deploy --config workers/scraper/wrangler.toml 2>&1)
+          echo "$out"
+          url=$(printf '%s' "$out" | grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' | head -1 || true)
+          if [ -z "$url" ]; then
+            sub=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+              | jq -r '.result.subdomain')
+            url="https://lottery-th-scraper.${sub}.workers.dev"
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Scraper Worker URL: $url"
+
+      - name: Generate and set ADMIN_TOKEN for Scraper
+        id: token
+        run: |
+          set -euo pipefail
+          TOKEN=$(openssl rand -hex 32)
+          echo "::add-mask::$TOKEN"
+          printf '%s' "$TOKEN" | npx wrangler secret put ADMIN_TOKEN --config workers/scraper/wrangler.toml
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure Pages project exists
+        run: |
+          set -euo pipefail
+          if ! npx wrangler pages project list --json | jq -e '.[] | select(.name=="lottery-th")' > /dev/null; then
+            echo "Creating Pages project lottery-th..."
+            npx wrangler pages project create lottery-th \
+              --production-branch=main \
+              --compatibility-date=2025-01-01
+          else
+            echo "Pages project lottery-th already exists"
+          fi
+
+      - name: Set Pages env var API_BASE
+        run: |
+          set -euo pipefail
+          API_BASE="${{ steps.api.outputs.url }}"
+          echo "Setting Pages env var API_BASE=$API_BASE"
+          resp=$(curl -sS -o /tmp/cf_resp.json -w "%{http_code}" -X PATCH \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/lottery-th" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"deployment_configs\":{\"production\":{\"env_vars\":{\"API_BASE\":{\"value\":\"${API_BASE}\"}}},\"preview\":{\"env_vars\":{\"API_BASE\":{\"value\":\"${API_BASE}\"}}}}}")
+          cat /tmp/cf_resp.json
+          if [ "$resp" != "200" ]; then
+            echo "::error::Failed to set Pages env var (HTTP $resp)"
+            exit 1
+          fi
+
+      - name: Deploy Pages
+        id: pages
+        run: |
+          set -euo pipefail
+          out=$(npx wrangler pages deploy web --project-name=lottery-th --branch=main 2>&1)
+          echo "$out"
+          url=$(printf '%s' "$out" | grep -oE 'https://[a-zA-Z0-9.-]+\.pages\.dev' | head -1 || true)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for secret propagation
+        run: sleep 12
+
+      - name: Run initial backfill
+        id: backfill
+        run: |
+          set -euo pipefail
+          YEARS="${{ inputs.backfill_years }}"
+          endpoint="${{ steps.scraper.outputs.url }}/backfill?years=${YEARS}"
+          echo "POST $endpoint"
+          response=$(curl -fsS -X POST "$endpoint" \
+            -H "X-Admin-Token: ${{ steps.token.outputs.token }}" \
+            --max-time 1500)
+          echo "$response"
+          added=$(echo "$response" | jq -r '.added // 0')
+          echo "added=$added" >> "$GITHUB_OUTPUT"
+
+      - name: Verify API returns data
+        run: |
+          set -euo pipefail
+          url="${{ steps.api.outputs.url }}/api/meta"
+          echo "GET $url"
+          curl -fsS "$url" | jq
+
+      - name: Summary
+        run: |
+          {
+            echo "## ✅ Bootstrap + backfill เสร็จสมบูรณ์"
+            echo ""
+            echo "| ทรัพยากร             | URL / ค่า                                               |"
+            echo "|---------------------|---------------------------------------------------------|"
+            echo "| **เว็บไซต์**         | ${{ steps.pages.outputs.url }}                           |"
+            echo "| **API Worker**      | ${{ steps.api.outputs.url }}                             |"
+            echo "| **Scraper Worker**  | ${{ steps.scraper.outputs.url }}                         |"
+            echo "| **D1 database ID**  | \`${{ steps.d1.outputs.d1_id }}\`                        |"
+            echo "| **งวดที่ backfill**  | ${{ steps.backfill.outputs.added }} งวด                    |"
+            echo ""
+            echo "### ทดสอบ"
+            echo "- \`curl ${{ steps.api.outputs.url }}/api/draws/latest\`"
+            echo "- \`curl ${{ steps.api.outputs.url }}/api/predict/last_two?topK=10\`"
+            echo ""
+            echo "ต่อจากนี้:"
+            echo "- Scheduler จะรันเองทุกวันที่ 2 และ 17 ของเดือน"
+            echo "- หากต้องการ re-backfill ให้รัน workflow \"Backfill lottery history\""
+          } >> "$GITHUB_STEP_SUMMARY"
