@@ -24,6 +24,9 @@ concurrency:
   group: bootstrap
   cancel-in-progress: false
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   bootstrap:
     runs-on: ubuntu-latest
