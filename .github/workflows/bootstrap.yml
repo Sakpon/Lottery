@@ -1,0 +1,99 @@
+name: Bootstrap (one-click setup)
+
+# ใช้สำหรับตั้งค่าครั้งแรก:
+#   1. สร้าง D1 database "lottery_th" ถ้ายังไม่มี
+#   2. Apply schema
+#   3. สร้าง Pages project "lottery-th" ถ้ายังไม่มี
+#   4. Deploy API + Scraper Workers + Pages
+# หลังจากรันแล้ว ให้ไปตั้ง ADMIN_TOKEN secret ของ Scraper ด้วย:
+#   wrangler secret put ADMIN_TOKEN --config workers/scraper/wrangler.toml
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    outputs:
+      d1_id: ${{ steps.d1.outputs.d1_id }}
+      api_url: ${{ steps.deploy_api.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --no-audit --no-fund
+
+      - name: Resolve or create D1 database
+        id: d1
+        run: |
+          set -euo pipefail
+          existing=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="lottery_th") | .uuid' || true)
+          if [ -z "${existing:-}" ]; then
+            echo "Creating D1 database lottery_th..."
+            created=$(npx wrangler d1 create lottery_th --json)
+            id=$(echo "$created" | jq -r '.uuid')
+          else
+            echo "D1 lottery_th already exists: $existing"
+            id="$existing"
+          fi
+          echo "d1_id=$id" >> "$GITHUB_OUTPUT"
+
+      - name: Inject D1 ID into wrangler.toml
+        run: |
+          sed -i "s/REPLACE_WITH_D1_ID/${{ steps.d1.outputs.d1_id }}/g" \
+            workers/api/wrangler.toml \
+            workers/scraper/wrangler.toml
+
+      - name: Apply schema (idempotent — uses CREATE IF NOT EXISTS)
+        run: npx wrangler d1 execute lottery_th --remote --file=data/schema/schema.sql
+
+      - name: Ensure Pages project exists
+        run: |
+          if ! npx wrangler pages project list --json | jq -e '.[] | select(.name=="lottery-th")' > /dev/null; then
+            npx wrangler pages project create lottery-th --production-branch=main
+          else
+            echo "Pages project lottery-th already exists"
+          fi
+
+      - name: Deploy API Worker
+        id: deploy_api
+        run: |
+          out=$(npx wrangler deploy --config workers/api/wrangler.toml 2>&1 | tee /dev/stderr)
+          url=$(echo "$out" | grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' | head -1 || true)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy Scraper Worker
+        run: npx wrangler deploy --config workers/scraper/wrangler.toml
+
+      - name: Deploy Pages
+        run: npx wrangler pages deploy web --project-name=lottery-th --branch=main
+
+      - name: Summary
+        run: |
+          {
+            echo "### ✅ Bootstrap complete"
+            echo ""
+            echo "- D1 database: \`lottery_th\` (id: \`${{ steps.d1.outputs.d1_id }}\`)"
+            echo "- API Worker: \`${{ steps.deploy_api.outputs.url }}\`"
+            echo ""
+            echo "### ⚠️ ต้องทำต่อ"
+            echo ""
+            echo "1. ตั้ง **ADMIN_TOKEN** secret ของ Scraper เพื่อเรียก /backfill ได้:"
+            echo "   \`\`\`"
+            echo "   wrangler secret put ADMIN_TOKEN --config workers/scraper/wrangler.toml"
+            echo "   \`\`\`"
+            echo "2. เพิ่ม GitHub secret **SCRAPER_URL** (URL ของ scraper worker)"
+            echo "   และ **SCRAPER_ADMIN_TOKEN** (ค่าเดียวกับที่ใส่ในข้อ 1)"
+            echo "3. เพิ่ม Pages env var **API_BASE** = \`${{ steps.deploy_api.outputs.url }}\`"
+            echo "   ใน Cloudflare Dashboard → Pages → lottery-th → Settings → Environment variables"
+            echo "4. รัน workflow **Backfill** เพื่อดึงข้อมูล 20 ปี"
+          } >> "$GITHUB_STEP_SUMMARY"

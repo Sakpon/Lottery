@@ -1,0 +1,64 @@
+name: Backfill lottery history
+
+# ดึงข้อมูลผลสลากย้อนหลังจาก sanook.com ผ่าน scraper worker
+# ต้องตั้ง secrets: SCRAPER_URL, SCRAPER_ADMIN_TOKEN
+
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: "จำนวนปีย้อนหลัง (สูงสุด ~22)"
+        required: true
+        default: "20"
+        type: string
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate secrets
+        run: |
+          if [ -z "${{ secrets.SCRAPER_URL }}" ] || [ -z "${{ secrets.SCRAPER_ADMIN_TOKEN }}" ]; then
+            echo "::error::Missing SCRAPER_URL or SCRAPER_ADMIN_TOKEN secrets"
+            exit 1
+          fi
+
+      - name: Trigger backfill
+        env:
+          SCRAPER_URL: ${{ secrets.SCRAPER_URL }}
+          TOKEN: ${{ secrets.SCRAPER_ADMIN_TOKEN }}
+          YEARS: ${{ inputs.years }}
+        run: |
+          set -euo pipefail
+          endpoint="${SCRAPER_URL%/}/backfill?years=${YEARS}"
+          echo "POST $endpoint"
+          # timeout สูง เพราะการ backfill 20 ปีใช้เวลาหลายนาที
+          response=$(curl -fsS -X POST "$endpoint" \
+            -H "X-Admin-Token: $TOKEN" \
+            --max-time 1200)
+          echo "$response"
+          added=$(echo "$response" | jq -r '.added // 0')
+          {
+            echo "### 📥 Backfill ${YEARS} ปี เสร็จสิ้น"
+            echo ""
+            echo "- เพิ่มงวดใหม่: **${added}**"
+            echo ""
+            echo "\`\`\`json"
+            echo "$response"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check status
+        env:
+          SCRAPER_URL: ${{ secrets.SCRAPER_URL }}
+          TOKEN: ${{ secrets.SCRAPER_ADMIN_TOKEN }}
+        run: |
+          status=$(curl -fsS "${SCRAPER_URL%/}/status" -H "X-Admin-Token: $TOKEN")
+          echo "$status"
+          {
+            echo "### 📊 สถานะปัจจุบัน"
+            echo ""
+            echo "\`\`\`json"
+            echo "$status"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -16,6 +16,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     strategy:
       matrix:
         worker: [api, scraper]
@@ -26,10 +29,22 @@ jobs:
           node-version: "20"
           cache: "npm"
       - run: npm ci --no-audit --no-fund
+
+      - name: Resolve D1 ID
+        id: d1
+        run: |
+          set -euo pipefail
+          id=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="lottery_th") | .uuid')
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "::error::D1 database 'lottery_th' not found — run the Bootstrap workflow first"
+            exit 1
+          fi
+          echo "d1_id=$id" >> "$GITHUB_OUTPUT"
+
+      - name: Inject D1 ID into wrangler.toml
+        run: |
+          sed -i "s/REPLACE_WITH_D1_ID/${{ steps.d1.outputs.d1_id }}/g" \
+            workers/${{ matrix.worker }}/wrangler.toml
+
       - name: Deploy ${{ matrix.worker }}
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: workers/${{ matrix.worker }}
-          command: deploy
+        run: npx wrangler deploy --config workers/${{ matrix.worker }}/wrangler.toml

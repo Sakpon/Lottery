@@ -1,16 +1,48 @@
 # คู่มือการ Deploy
 
-## สิ่งที่ต้องมี
+## วิธีเร็วที่สุด: One-click bootstrap via GitHub Actions ⚡
 
-- บัญชี [Cloudflare](https://cash.cloudflare.com/sign-up) (ฟรี)
-- บัญชี GitHub + repository นี้
+**ใช้เมื่อคุณตั้งค่า GitHub secrets `CLOUDFLARE_API_TOKEN` และ `CLOUDFLARE_ACCOUNT_ID` แล้ว**
+
+### ขั้นตอน
+
+1. **Merge PR** หรือ push เข้า `main` เพื่อให้ workflow ใช้ได้
+2. ไปที่ GitHub → **Actions** → **Bootstrap (one-click setup)** → **Run workflow**
+   - จะสร้าง D1 database, apply schema, สร้าง Pages project, deploy ทุกอย่าง
+3. เมื่อ bootstrap เสร็จ ดู "Summary" ของ workflow — จะบอก URL ของ API Worker และขั้นตอนถัดไป
+4. **ตั้ง Scraper ADMIN_TOKEN** (ในเครื่องคุณ):
+   ```bash
+   npx wrangler secret put ADMIN_TOKEN --config workers/scraper/wrangler.toml
+   ```
+   (พิมพ์ token ที่สุ่ม/ตั้งเอง)
+5. **เพิ่ม GitHub secrets**:
+   - `SCRAPER_URL` = URL ของ scraper worker (เช่น `https://lottery-th-scraper.YOUR_SUBDOMAIN.workers.dev`)
+   - `SCRAPER_ADMIN_TOKEN` = ค่าเดียวกับข้อ 4
+6. **เพิ่ม Pages env var** ที่ Cloudflare Dashboard → Pages → `lottery-th` → Settings → Environment variables:
+   - `API_BASE` = URL ของ API Worker
+7. ไปที่ Actions → **Backfill lottery history** → Run workflow (เลือก years=20)
+   - รอ 5-10 นาที ระบบจะดึงข้อมูลผลสลากย้อนหลัง 20 ปีจาก sanook.com
+8. เสร็จ! เข้าที่ Pages URL ดูผล
+
+---
+
+## Manual deployment (วิธีดั้งเดิม)
+
+### สิ่งที่ต้องมี
+
+- บัญชี [Cloudflare](https://dash.cloudflare.com/sign-up) (ฟรี)
 - Node.js ≥ 20
 - `npm install` ที่ root
 
-## 1) สร้าง D1 Database
+### 1) ล็อกอิน Wrangler
 
 ```bash
 npx wrangler login
+```
+
+### 2) สร้าง D1 Database
+
+```bash
 npx wrangler d1 create lottery_th
 ```
 
@@ -18,27 +50,27 @@ npx wrangler d1 create lottery_th
 - `workers/api/wrangler.toml`
 - `workers/scraper/wrangler.toml`
 
-สร้าง schema:
+### 3) Apply schema
 
 ```bash
 npm run db:init
 ```
 
-## 2) ตั้งค่า secrets สำหรับ Scraper
+### 4) Set secrets
 
 ```bash
-# สำหรับ POST /backfill, /fetch
 npx wrangler secret put ADMIN_TOKEN --config workers/scraper/wrangler.toml
 ```
 
-## 3) Deploy Workers
+### 5) Deploy
 
 ```bash
 npm run deploy:api
 npm run deploy:scraper
+npm run deploy:web
 ```
 
-## 4) Backfill ข้อมูลย้อนหลัง 20 ปี (one-time)
+### 6) Backfill 20 ปี
 
 ```bash
 curl -X POST "https://lottery-th-scraper.<YOUR_SUBDOMAIN>.workers.dev/backfill?years=20" \
@@ -49,27 +81,7 @@ curl -X POST "https://lottery-th-scraper.<YOUR_SUBDOMAIN>.workers.dev/backfill?y
 > Worker จะ throttle คำขอไปยัง sanook.com เพื่อเป็นมารยาทต่อ host
 > สามารถรันซ้ำได้ ระบบจะข้ามงวดที่มีอยู่แล้ว
 
-## 5) Deploy Cloudflare Pages
-
-สร้าง Pages project ชื่อ `lottery-th` — ต่อเข้ากับ GitHub repository นี้
-ตั้งค่าใน Pages → Settings → Environment variables:
-
-- `API_BASE` = `https://lottery-th-api.<YOUR_SUBDOMAIN>.workers.dev`
-
-หรือ deploy ผ่าน CLI:
-
-```bash
-npm run deploy:web
-```
-
-## 6) ตั้งค่า GitHub Actions (deployed on push)
-
-เพิ่ม secrets ใน GitHub repo:
-- `CLOUDFLARE_API_TOKEN` — สร้างที่ Cloudflare Dashboard → My Profile → API Tokens
-  (ต้องมีสิทธิ์ Workers Scripts:Edit, D1:Edit, Pages:Edit)
-- `CLOUDFLARE_ACCOUNT_ID` — อยู่ที่ Dashboard URL
-
-เมื่อ push ไป `main` จะ deploy อัตโนมัติ
+---
 
 ## ตรวจสอบการทำงาน
 
@@ -101,3 +113,21 @@ npm run dev:scraper
 # รัน Pages
 npm run dev:web
 ```
+
+## GitHub secrets ที่ต้องตั้ง
+
+| Secret                  | ใช้ที่ไหน                                    | ได้จากไหน                          |
+|-------------------------|----------------------------------------------|------------------------------------|
+| `CLOUDFLARE_API_TOKEN`  | Bootstrap, Deploy Workers, Deploy Pages      | Cloudflare Dashboard → API Tokens  |
+| `CLOUDFLARE_ACCOUNT_ID` | Bootstrap, Deploy Workers, Deploy Pages      | Dashboard URL หรือ sidebar         |
+| `SCRAPER_URL`           | Backfill workflow                            | URL ของ scraper worker             |
+| `SCRAPER_ADMIN_TOKEN`   | Backfill workflow                            | ตั้งเองแล้วใช้ `wrangler secret put ADMIN_TOKEN` ในฝั่ง worker ด้วย |
+
+## สิทธิ์ที่ API Token ต้องมี
+
+สร้าง API token แบบ Custom ที่ Cloudflare Dashboard → My Profile → API Tokens → Create Token:
+
+- Account → **Workers Scripts** → Edit
+- Account → **D1** → Edit
+- Account → **Cloudflare Pages** → Edit
+- Account → **Account Settings** → Read
