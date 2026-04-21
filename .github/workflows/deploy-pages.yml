@@ -70,5 +70,18 @@ jobs:
             echo "API_BASE already set: $current"
           fi
 
+      - name: Resolve API Worker URL and inject into web/assets/js/config.js
+        run: |
+          set -euo pipefail
+          sub=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/subdomain" \
+            | jq -r '.result.subdomain')
+          API_URL="https://lottery-th-api.${sub}.workers.dev"
+          cat > web/assets/js/config.js <<EOF
+          // generated at deploy time by deploy-pages.yml
+          window.__API_BASE__ = "${API_URL}/api";
+          EOF
+          echo "Wrote config.js pointing at ${API_URL}/api"
+
       - name: Deploy Pages
         run: npx wrangler pages deploy web --project-name=lottery-th --branch=main

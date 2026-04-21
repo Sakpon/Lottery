@@ -62,7 +62,11 @@ export async function listSanookArchiveUrls(
 }
 
 /** Parse หน้าผลรางวัลเดียว */
-export function parseSanookDrawPage(html: string, sourceUrl: string): ParsedDraw | null {
+export function parseSanookDrawPage(rawHtml: string, sourceUrl: string): ParsedDraw | null {
+  // Normalize: strip tags + decode common entities + collapse ช่องว่างระหว่างตัวเลข
+  // เพื่อให้ pattern เช่น "<span>3</span><span>0</span>..." กลายเป็น "30..." ที่ regex จับได้
+  const html = normalizeHtml(rawHtml);
+
   // ดึง title/heading → "งวดวันที่ 1 เมษายน 2569"
   const dateMatch = html.match(
     /งวด(?:ประจำ|)วันที่\s*(\d{1,2})\s*([฀-๿]+)\s*(\d{4})/,
@@ -79,9 +83,14 @@ export function parseSanookDrawPage(html: string, sourceUrl: string): ParsedDraw
 
   const numbers: ParsedNumber[] = [];
 
-  // รางวัลที่ 1 — เลข 6 หลักหลังคำว่า "รางวัลที่ 1"
-  const first = matchAfter(html, /รางวัลที่\s*1[^0-9]{0,200}?(\d{6})/);
-  if (first) numbers.push({ prizeType: "first", number: first, position: 0 });
+  // รางวัลที่ 1 — เลข 6 หลักในบล็อกระหว่าง "รางวัลที่ 1" และ section ถัดไป
+  // หลีกเลี่ยงการชน "รางวัลข้างเคียงรางวัลที่ 1" โดยหาบล็อกหลังคำว่า "รางวัลที่ 1"
+  // ที่ไม่นำหน้าด้วย "ข้างเคียง" (negative lookbehind จำลองด้วย regex plain)
+  const firstBlock = findFirstPrizeBlock(html);
+  if (firstBlock) {
+    const six = firstBlock.match(/(?<!\d)(\d{6})(?!\d)/);
+    if (six) numbers.push({ prizeType: "first", number: six[1], position: 0 });
+  }
 
   // รางวัลข้างเคียงรางวัลที่ 1 — เลข 6 หลัก 2 หมายเลข
   const nearBlock = sliceBetween(html, "รางวัลข้างเคียงรางวัลที่ 1", "รางวัลที่ 2", 4000)
@@ -125,9 +134,57 @@ export function parseSanookDrawPage(html: string, sourceUrl: string): ParsedDraw
 }
 
 // ───────────── helpers ─────────────
-function matchAfter(s: string, re: RegExp): string | null {
-  const m = s.match(re);
-  return m ? m[1] : null;
+function normalizeHtml(html: string): string {
+  return (
+    html
+      // ลบ script/style content ออกก่อน กัน regex หลงไปเจอเลขใน inline JS
+      .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+      // strip HTML tags
+      .replace(/<[^>]+>/g, " ")
+      // decode common entities
+      .replace(/&nbsp;|&#160;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      // collapse whitespace ที่อยู่ "ระหว่างตัวเลข" ให้ติดกัน
+      // "3 0 9 6 1 2" → "309612" (สำหรับหน้าเลขที่แต่ละหลักแยก span)
+      .replace(/\d[\d\s]*\d/g, (m) => m.replace(/\s+/g, ""))
+      // ลด whitespace ซ้ำ ๆ
+      .replace(/[ \t]+/g, " ")
+  );
+}
+
+function findFirstPrizeBlock(html: string): string | null {
+  // หา "รางวัลที่ 1" ที่ไม่นำหน้าด้วย "ข้างเคียง"
+  // สแกนทุก occurrence แล้วเลือกอันที่ไม่ได้เป็นส่วนของ "รางวัลข้างเคียงรางวัลที่ 1"
+  const pattern = /รางวัลที่\s*1(?!\s*[กข-ฮ])/g;
+  let m: RegExpExecArray | null;
+  while ((m = pattern.exec(html)) !== null) {
+    const start = m.index;
+    // ตรวจว่าข้างหน้า 20 ตัวอักษรมีคำว่า "ข้างเคียง" ไหม — ถ้ามีให้ข้าม
+    const preview = html.slice(Math.max(0, start - 20), start);
+    if (preview.includes("ข้างเคียง")) continue;
+    // เอาบล็อกไปจนถึง section ถัดไป (รางวัลข้างเคียง/รางวัลที่ 2)
+    const after = html.slice(start, start + 2000);
+    const end =
+      findEarliestIndex(after, [
+        "รางวัลข้างเคียงรางวัลที่ 1",
+        "รางวัลที่ 2",
+        "เลขหน้า 3 ตัว",
+      ]) ?? 2000;
+    return after.slice(0, end);
+  }
+  return null;
+}
+
+function findEarliestIndex(s: string, markers: string[]): number | null {
+  let min: number | null = null;
+  for (const m of markers) {
+    const i = s.indexOf(m);
+    if (i >= 0 && (min === null || i < min)) min = i;
+  }
+  return min;
 }
 
 function sliceBetween(s: string, startMarker: string, endMarker: string, maxLen = 2000): string | null {
