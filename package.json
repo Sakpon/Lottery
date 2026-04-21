@@ -1,0 +1,29 @@
+{
+  "name": "thailand-lottery-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "แพลตฟอร์มวิเคราะห์สลากกินแบ่งรัฐบาลไทย บน Cloudflare Workers + Pages",
+  "workspaces": [
+    "workers/*"
+  ],
+  "scripts": {
+    "dev:api": "wrangler dev --config workers/api/wrangler.toml",
+    "dev:scraper": "wrangler dev --config workers/scraper/wrangler.toml --test-scheduled",
+    "dev:web": "wrangler pages dev web --compatibility-date=2025-01-01",
+    "deploy:api": "wrangler deploy --config workers/api/wrangler.toml",
+    "deploy:scraper": "wrangler deploy --config workers/scraper/wrangler.toml",
+    "deploy:web": "wrangler pages deploy web --project-name=lottery-th",
+    "db:init": "wrangler d1 execute lottery_th --file=data/schema/schema.sql",
+    "db:init:local": "wrangler d1 execute lottery_th --local --file=data/schema/schema.sql",
+    "backfill": "node scripts/backfill.mjs",
+    "seed:local": "wrangler d1 execute lottery_th --local --file=data/seed/recent.sql"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "typescript": "^5.6.0",
+    "wrangler": "^3.95.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

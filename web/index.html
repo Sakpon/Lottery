@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#8B1538">
+  <meta name="description" content="วิเคราะห์และทำนายหวยไทย (สลากกินแบ่งรัฐบาล) ด้วยสถิติย้อนหลัง 20 ปี">
+  <title>หวยสถิติ — แพลตฟอร์มวิเคราะห์สลากกินแบ่งรัฐบาล</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/assets/img/icon.svg" type="image/svg+xml">
+</head>
+<body>
+  <a class="skip-link" href="#main">ข้ามไปเนื้อหา</a>
+
+  <header class="app-header">
+    <div class="container header-row">
+      <a class="brand" href="/" aria-label="หวยสถิติ หน้าแรก">
+        <span class="brand-mark" aria-hidden="true">৪</span>
+        <span class="brand-text">หวยสถิติ</span>
+      </a>
+      <button class="nav-toggle" aria-expanded="false" aria-controls="primary-nav" aria-label="เปิดเมนู">
+        <span></span><span></span><span></span>
+      </button>
+      <nav id="primary-nav" class="nav">
+        <a href="/" class="nav-link active">หน้าแรก</a>
+        <a href="/history.html" class="nav-link">ผลย้อนหลัง</a>
+        <a href="/stats.html" class="nav-link">สถิติ</a>
+        <a href="/predict.html" class="nav-link">ทำนาย</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero container">
+      <p class="eyebrow">งวดล่าสุด</p>
+      <h1 class="hero-title" data-el="latest-date">กำลังโหลด...</h1>
+      <div class="prize-grid" data-el="latest-prizes">
+        <div class="prize-card prize-first">
+          <p class="prize-label">รางวัลที่ 1</p>
+          <p class="prize-number" data-prize="first">— — — — — —</p>
+        </div>
+        <div class="prize-card">
+          <p class="prize-label">เลขหน้า 3 ตัว</p>
+          <p class="prize-number small" data-prize="frontThree">— — —</p>
+        </div>
+        <div class="prize-card">
+          <p class="prize-label">เลขท้าย 3 ตัว</p>
+          <p class="prize-number small" data-prize="lastThree">— — —</p>
+        </div>
+        <div class="prize-card">
+          <p class="prize-label">เลขท้าย 2 ตัว</p>
+          <p class="prize-number" data-prize="lastTwo">— —</p>
+        </div>
+      </div>
+      <p class="source-note" data-el="source-note"></p>
+    </section>
+
+    <section class="container cta-section">
+      <div class="next-draw-card">
+        <div>
+          <p class="eyebrow">งวดถัดไป</p>
+          <h2 data-el="next-draw-date">—</h2>
+          <p class="countdown" data-el="countdown">—</p>
+        </div>
+        <a href="/predict.html" class="btn btn-primary">ดูเลขแนะนำ</a>
+      </div>
+    </section>
+
+    <section class="container feature-section">
+      <h2 class="section-title">การวิเคราะห์</h2>
+      <div class="feature-grid">
+        <a href="/stats.html?prize=last_two" class="feature-card">
+          <h3>เลขท้าย 2 ตัว</h3>
+          <p>เลขร้อน–เย็น และความถี่ตามตำแหน่งหลัก</p>
+          <span class="feature-arrow" aria-hidden="true">→</span>
+        </a>
+        <a href="/stats.html?prize=last_three" class="feature-card">
+          <h3>เลขท้าย 3 ตัว</h3>
+          <p>แนวโน้มล่าสุดและเลขที่ค้างนาน</p>
+          <span class="feature-arrow" aria-hidden="true">→</span>
+        </a>
+        <a href="/predict.html" class="feature-card">
+          <h3>เลขแนะนำ (Ensemble)</h3>
+          <p>รวมผลจาก 4 โมเดลทางสถิติ</p>
+          <span class="feature-arrow" aria-hidden="true">→</span>
+        </a>
+        <a href="/history.html" class="feature-card">
+          <h3>ผลย้อนหลัง 20 ปี</h3>
+          <p>ค้นหาและเปรียบเทียบงวดต่าง ๆ</p>
+          <span class="feature-arrow" aria-hidden="true">→</span>
+        </a>
+      </div>
+    </section>
+
+    <section class="container meta-section">
+      <div class="meta-row">
+        <div class="meta-stat">
+          <p class="meta-label">งวดทั้งหมด</p>
+          <p class="meta-value" data-el="meta-total">—</p>
+        </div>
+        <div class="meta-stat">
+          <p class="meta-label">ข้อมูลตั้งแต่</p>
+          <p class="meta-value" data-el="meta-earliest">—</p>
+        </div>
+        <div class="meta-stat">
+          <p class="meta-label">อัปเดตล่าสุด</p>
+          <p class="meta-value" data-el="meta-latest">—</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="container disclaimer">
+      <p><strong>หมายเหตุ:</strong> ผลการทำนายคำนวณจากสถิติย้อนหลังเท่านั้น
+      การออกรางวัลเป็นการสุ่ม ไม่มีวิธีทำนายผลได้อย่างแม่นยำ โปรดเล่นอย่างมีสติและภายใต้งบประมาณที่เหมาะสม</p>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <div class="container">
+      <p>© หวยสถิติ · ข้อมูลจาก <a href="https://news.sanook.com/lotto/" rel="noopener">sanook.com/lotto</a></p>
+      <p class="footer-note">โปรเจกต์ Open Source — ไม่เกี่ยวข้องกับสำนักงานสลากกินแบ่งรัฐบาล</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/assets/js/api.js"></script>
+  <script type="module" src="/assets/js/home.js"></script>
+  <script type="module" src="/assets/js/nav.js"></script>
+</body>
+</html>

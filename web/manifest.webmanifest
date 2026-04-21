@@ -1,0 +1,15 @@
+{
+  "name": "หวยสถิติ — วิเคราะห์สลากกินแบ่งรัฐบาล",
+  "short_name": "หวยสถิติ",
+  "description": "แพลตฟอร์มวิเคราะห์และทำนายหวยไทยด้วยสถิติย้อนหลัง",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FBF7F2",
+  "theme_color": "#8B1538",
+  "lang": "th",
+  "dir": "ltr",
+  "icons": [
+    { "src": "/assets/img/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
