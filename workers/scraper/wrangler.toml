@@ -1,0 +1,22 @@
+name = "lottery-th-scraper"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# รัน cron วันถัดจากงวดออก (2 และ 17 ของเดือน) เวลา 10:00 UTC (~17:00 เวลาไทย)
+# สลากออก 14:00 ICT เวลาไทย วันที่ 1 และ 16 → รอบ cron 10:00 UTC ของวันที่ 2 และ 17
+[triggers]
+crons = ["0 10 2,17 * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lottery_th"
+database_id = "REPLACE_WITH_D1_ID"
+
+[vars]
+SOURCE_BASE = "https://news.sanook.com/lotto"
+USER_AGENT  = "LotteryTHBot/0.1 (+https://github.com/sakpon/lottery) github-actions"
+BACKFILL_YEARS = "20"
+
+# สำหรับ manual trigger backfill จาก HTTP
+[observability]
+enabled = true

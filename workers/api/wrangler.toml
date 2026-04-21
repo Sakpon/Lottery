@@ -1,0 +1,15 @@
+name = "lottery-th-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lottery_th"
+database_id = "REPLACE_WITH_D1_ID"
+
+[vars]
+ALLOWED_ORIGIN = "*"
+CACHE_TTL = "3600"
+
+[observability]
+enabled = true
