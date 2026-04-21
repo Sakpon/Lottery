@@ -2,27 +2,26 @@
 
 ## วิธีเร็วที่สุด: One-click bootstrap via GitHub Actions ⚡
 
-**ใช้เมื่อคุณตั้งค่า GitHub secrets `CLOUDFLARE_API_TOKEN` และ `CLOUDFLARE_ACCOUNT_ID` แล้ว**
+**ต้องมี GitHub secrets 2 ตัวเท่านั้น** — `CLOUDFLARE_API_TOKEN` และ `CLOUDFLARE_ACCOUNT_ID`
+(ส่วนอื่น ๆ เช่น ADMIN_TOKEN, API_BASE env var, etc. workflow จะจัดการให้อัตโนมัติ)
 
-### ขั้นตอน
+### ขั้นตอน (2 คลิก)
 
-1. **Merge PR** หรือ push เข้า `main` เพื่อให้ workflow ใช้ได้
-2. ไปที่ GitHub → **Actions** → **Bootstrap (one-click setup)** → **Run workflow**
-   - จะสร้าง D1 database, apply schema, สร้าง Pages project, deploy ทุกอย่าง
-3. เมื่อ bootstrap เสร็จ ดู "Summary" ของ workflow — จะบอก URL ของ API Worker และขั้นตอนถัดไป
-4. **ตั้ง Scraper ADMIN_TOKEN** (ในเครื่องคุณ):
-   ```bash
-   npx wrangler secret put ADMIN_TOKEN --config workers/scraper/wrangler.toml
-   ```
-   (พิมพ์ token ที่สุ่ม/ตั้งเอง)
-5. **เพิ่ม GitHub secrets**:
-   - `SCRAPER_URL` = URL ของ scraper worker (เช่น `https://lottery-th-scraper.YOUR_SUBDOMAIN.workers.dev`)
-   - `SCRAPER_ADMIN_TOKEN` = ค่าเดียวกับข้อ 4
-6. **เพิ่ม Pages env var** ที่ Cloudflare Dashboard → Pages → `lottery-th` → Settings → Environment variables:
-   - `API_BASE` = URL ของ API Worker
-7. ไปที่ Actions → **Backfill lottery history** → Run workflow (เลือก years=20)
-   - รอ 5-10 นาที ระบบจะดึงข้อมูลผลสลากย้อนหลัง 20 ปีจาก sanook.com
-8. เสร็จ! เข้าที่ Pages URL ดูผล
+1. **Merge PR** เข้า `main` เพื่อให้ workflow พร้อมใช้
+2. ไปที่ GitHub → **Actions** → **Bootstrap (one-click full deploy + backfill)** → **Run workflow**
+   - ใส่ `backfill_years = 20` แล้วกด Run
+   - Workflow จะทำให้ครบทุกขั้นอัตโนมัติ:
+     - สร้าง D1 database + apply schema
+     - Deploy API + Scraper Workers
+     - สุ่มและตั้ง `ADMIN_TOKEN` สำหรับ Scraper (masked ใน log)
+     - สร้าง Pages project + ตั้ง `API_BASE` env var ผ่าน CF API
+     - Deploy Pages
+     - รัน backfill 20 ปี (5–10 นาที)
+   - รวมเวลา: ~10–15 นาที
+3. เปิด URL ของ Pages จาก Summary ของ workflow — พร้อมใช้งาน 🎉
+
+**ไม่ต้องทำอะไรเพิ่ม** — cron จะอัปเดตเองทุกวันที่ 2 และ 17 ของเดือน
+หากต้องการ re-backfill ภายหลัง ให้รัน workflow **Backfill lottery history**
 
 ---
 
@@ -118,10 +117,11 @@ npm run dev:web
 
 | Secret                  | ใช้ที่ไหน                                    | ได้จากไหน                          |
 |-------------------------|----------------------------------------------|------------------------------------|
-| `CLOUDFLARE_API_TOKEN`  | Bootstrap, Deploy Workers, Deploy Pages      | Cloudflare Dashboard → API Tokens  |
-| `CLOUDFLARE_ACCOUNT_ID` | Bootstrap, Deploy Workers, Deploy Pages      | Dashboard URL หรือ sidebar         |
-| `SCRAPER_URL`           | Backfill workflow                            | URL ของ scraper worker             |
-| `SCRAPER_ADMIN_TOKEN`   | Backfill workflow                            | ตั้งเองแล้วใช้ `wrangler secret put ADMIN_TOKEN` ในฝั่ง worker ด้วย |
+| `CLOUDFLARE_API_TOKEN`  | ทุก workflow                                 | Cloudflare Dashboard → API Tokens  |
+| `CLOUDFLARE_ACCOUNT_ID` | ทุก workflow                                 | Dashboard URL หรือ sidebar         |
+
+> `ADMIN_TOKEN` ของ Scraper จะถูก rotate อัตโนมัติในแต่ละครั้งที่รัน Bootstrap หรือ Backfill workflow
+> ไม่ต้องเก็บเป็น GitHub secret
 
 ## สิทธิ์ที่ API Token ต้องมี
 

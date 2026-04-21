@@ -1,63 +1,90 @@
 name: Backfill lottery history
 
-# ดึงข้อมูลผลสลากย้อนหลังจาก sanook.com ผ่าน scraper worker
-# ต้องตั้ง secrets: SCRAPER_URL, SCRAPER_ADMIN_TOKEN
+# ดึงข้อมูลผลสลากย้อนหลังจาก sanook.com
+# Workflow นี้ self-contained — ไม่ต้องตั้ง SCRAPER_URL หรือ ADMIN_TOKEN secret
+# เพราะจะสุ่ม ADMIN_TOKEN ใหม่ทุกครั้ง แล้ว rotate ผ่าน wrangler secret put
+# ต้องมี secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
 
 on:
   workflow_dispatch:
     inputs:
       years:
-        description: "จำนวนปีย้อนหลัง (สูงสุด ~22)"
+        description: "จำนวนปีย้อนหลัง (ค่าสูงสุด ~22)"
         required: true
         default: "20"
         type: string
 
+concurrency:
+  group: backfill
+  cancel-in-progress: false
+
 jobs:
   backfill:
     runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - name: Validate secrets
-        run: |
-          if [ -z "${{ secrets.SCRAPER_URL }}" ] || [ -z "${{ secrets.SCRAPER_ADMIN_TOKEN }}" ]; then
-            echo "::error::Missing SCRAPER_URL or SCRAPER_ADMIN_TOKEN secrets"
-            exit 1
-          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --no-audit --no-fund
 
-      - name: Trigger backfill
-        env:
-          SCRAPER_URL: ${{ secrets.SCRAPER_URL }}
-          TOKEN: ${{ secrets.SCRAPER_ADMIN_TOKEN }}
-          YEARS: ${{ inputs.years }}
+      - name: Resolve D1 ID (required for scraper config)
+        id: d1
         run: |
           set -euo pipefail
-          endpoint="${SCRAPER_URL%/}/backfill?years=${YEARS}"
+          id=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="lottery_th") | .uuid')
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "::error::D1 database 'lottery_th' not found — run Bootstrap first"
+            exit 1
+          fi
+          echo "d1_id=$id" >> "$GITHUB_OUTPUT"
+          sed -i "s/REPLACE_WITH_D1_ID/$id/g" workers/scraper/wrangler.toml
+
+      - name: Resolve scraper worker URL
+        id: scraper
+        run: |
+          set -euo pipefail
+          sub=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+            | jq -r '.result.subdomain')
+          url="https://lottery-th-scraper.${sub}.workers.dev"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Scraper URL: $url"
+
+      - name: Rotate ADMIN_TOKEN and call /backfill
+        run: |
+          set -euo pipefail
+          TOKEN=$(openssl rand -hex 32)
+          echo "::add-mask::$TOKEN"
+          printf '%s' "$TOKEN" | npx wrangler secret put ADMIN_TOKEN --config workers/scraper/wrangler.toml
+          sleep 8  # secret propagation
+
+          endpoint="${{ steps.scraper.outputs.url }}/backfill?years=${{ inputs.years }}"
           echo "POST $endpoint"
-          # timeout สูง เพราะการ backfill 20 ปีใช้เวลาหลายนาที
           response=$(curl -fsS -X POST "$endpoint" \
             -H "X-Admin-Token: $TOKEN" \
-            --max-time 1200)
+            --max-time 1500)
           echo "$response"
           added=$(echo "$response" | jq -r '.added // 0')
           {
-            echo "### 📥 Backfill ${YEARS} ปี เสร็จสิ้น"
+            echo "## 📥 Backfill ${{ inputs.years }} ปี เสร็จสิ้น"
             echo ""
-            echo "- เพิ่มงวดใหม่: **${added}**"
+            echo "- เพิ่มงวดใหม่: **$added**"
             echo ""
             echo "\`\`\`json"
             echo "$response"
             echo "\`\`\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Check status
-        env:
-          SCRAPER_URL: ${{ secrets.SCRAPER_URL }}
-          TOKEN: ${{ secrets.SCRAPER_ADMIN_TOKEN }}
-        run: |
-          status=$(curl -fsS "${SCRAPER_URL%/}/status" -H "X-Admin-Token: $TOKEN")
-          echo "$status"
+          # check status
+          status=$(curl -fsS "${{ steps.scraper.outputs.url }}/status" -H "X-Admin-Token: $TOKEN")
           {
-            echo "### 📊 สถานะปัจจุบัน"
             echo ""
+            echo "### 📊 สถานะปัจจุบัน"
             echo "\`\`\`json"
             echo "$status"
             echo "\`\`\`"
