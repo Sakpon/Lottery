@@ -39,8 +39,12 @@ jobs:
           existing=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="lottery_th") | .uuid' || true)
           if [ -z "${existing:-}" ] || [ "$existing" = "null" ]; then
             echo "D1 lottery_th not found — creating..."
-            created=$(npx wrangler d1 create lottery_th --json)
-            id=$(echo "$created" | jq -r '.uuid')
+            npx wrangler d1 create lottery_th
+            id=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="lottery_th") | .uuid')
+            if [ -z "$id" ] || [ "$id" = "null" ]; then
+              echo "::error::D1 create succeeded but could not resolve UUID"
+              exit 1
+            fi
             # apply schema ทันทีที่สร้างใหม่
             sed -i "s/REPLACE_WITH_D1_ID/$id/g" workers/api/wrangler.toml workers/scraper/wrangler.toml
             npx wrangler d1 execute lottery_th --remote --file=data/schema/schema.sql
