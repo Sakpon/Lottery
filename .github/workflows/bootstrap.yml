@@ -48,8 +48,12 @@ jobs:
           existing=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="lottery_th") | .uuid' || true)
           if [ -z "${existing:-}" ] || [ "$existing" = "null" ]; then
             echo "Creating D1 database lottery_th..."
-            created=$(npx wrangler d1 create lottery_th --json)
-            id=$(echo "$created" | jq -r '.uuid')
+            npx wrangler d1 create lottery_th
+            id=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="lottery_th") | .uuid')
+            if [ -z "$id" ] || [ "$id" = "null" ]; then
+              echo "::error::D1 create succeeded but could not resolve UUID"
+              exit 1
+            fi
           else
             echo "D1 lottery_th already exists: $existing"
             id="$existing"
