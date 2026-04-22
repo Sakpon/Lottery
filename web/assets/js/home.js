@@ -32,10 +32,45 @@ async function render() {
     setText('[data-el="meta-total"]', meta.total?.toLocaleString("th-TH") ?? "—");
     setText('[data-el="meta-earliest"]', formatThaiDate(meta.earliest));
     setText('[data-el="meta-latest"]', formatThaiDate(meta.latest));
+
+    // Recommended first-prize picks — non-blocking; hero stays responsive if this fails
+    renderRecommendedFirst();
   } catch (e) {
     console.error(e);
     showError();
   }
+}
+
+async function renderRecommendedFirst() {
+  const el = document.querySelector('[data-el="recommend-first"]');
+  if (!el) return;
+  try {
+    const res = await api.predict("first", 3);
+    if (!res.ensemble?.length) {
+      el.innerHTML = `<li class="rank-skeleton">${res.warning || "ข้อมูลยังไม่เพียงพอ"}</li>`;
+      return;
+    }
+    el.innerHTML = "";
+    res.ensemble.forEach((p) => el.appendChild(renderRecommendItem(p)));
+  } catch (e) {
+    console.error(e);
+    el.innerHTML = '<li class="rank-skeleton">โหลดเลขแนะนำไม่สำเร็จ</li>';
+  }
+}
+
+function renderRecommendItem(p) {
+  const li = document.createElement("li");
+  li.className = "rank-item";
+  li.style.setProperty("--score", (p.score ?? 0).toFixed(2));
+  li.innerHTML = `
+    <div style="display:flex;align-items:center;gap:.5rem">
+      <span class="rank-badge">${p.rank}</span>
+      <span class="rank-score">คะแนน ${((p.score ?? 0) * 100).toFixed(0)}%</span>
+    </div>
+    <p class="rank-number">${p.number}</p>
+    ${p.reason ? `<p class="rank-reason">${p.reason}</p>` : ""}
+  `;
+  return li;
 }
 
 function setPrize(key, value) {
