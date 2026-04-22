@@ -124,23 +124,30 @@ async function fetchAndStoreByDate(env: Env, isoDate: string): Promise<number> {
 
 // ───────────────────────── storage ───────────────────────────
 async function upsertDraw(db: D1Database, p: ParsedDraw): Promise<number> {
-  // skip หากมีอยู่แล้ว
   const existing = await db
     .prepare("SELECT id FROM draws WHERE draw_date = ?")
     .bind(p.drawDate)
     .first<{ id: number }>();
-  if (existing) return 0;
 
-  const res = await db
-    .prepare(
-      "INSERT INTO draws (draw_date, draw_date_th, source, source_url) VALUES (?, ?, 'sanook', ?)",
-    )
-    .bind(p.drawDate, p.drawDateTh, p.sourceUrl)
-    .run();
+  let drawId: number;
+  let isNew = false;
+  if (existing) {
+    drawId = existing.id;
+  } else {
+    const res = await db
+      .prepare(
+        "INSERT INTO draws (draw_date, draw_date_th, source, source_url) VALUES (?, ?, 'sanook', ?)",
+      )
+      .bind(p.drawDate, p.drawDateTh, p.sourceUrl)
+      .run();
+    const id = res.meta.last_row_id;
+    if (!id) return 0;
+    drawId = Number(id);
+    isNew = true;
+  }
 
-  const drawId = res.meta.last_row_id;
-  if (!drawId) return 0;
-
+  // เขียนตัวเลขเสมอ — INSERT OR IGNORE จะข้ามเฉพาะ (draw_id, prize_type, position) ที่ซ้ำ
+  // ทำให้การ re-scrape หลังแก้ parser เติมเลขที่ขาดได้
   const stmts: D1PreparedStatement[] = [];
   for (const n of p.numbers) {
     stmts.push(
@@ -152,9 +159,8 @@ async function upsertDraw(db: D1Database, p: ParsedDraw): Promise<number> {
     );
   }
   if (stmts.length) await db.batch(stmts);
-  // เคลียร์แคชสถิติ
   await db.prepare("DELETE FROM stats_cache").run();
-  return 1;
+  return isNew ? 1 : 0;
 }
 
 async function logScrape(
