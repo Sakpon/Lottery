@@ -161,5 +161,45 @@ console.log("case 5: adjacent 3-digit numbers stay separate");
   );
 }
 
+// ─── Case 6: prize-amount commas must not leak as phantom 000 digits ───────
+//     Real sanook rendering — "รางวัลละ 4,000 บาท" appears in each section.
+//     Without comma-stripping, the 3-digit extractor picks "000" from "4,000"
+//     as position-0 for both front_three and last_three.
+console.log("case 6: prize-amount commas don't leak as 000");
+{
+  const html = `<html><body>
+    <h1>งวดวันที่ 16 เมษายน 2569</h1>
+    <div class="lotto__number lotto--black">309612</div>
+    <section>รางวัลข้างเคียงรางวัลที่ 1 รางวัลละ 100,000 บาท
+      <div>309611</div><div>309613</div>
+    </section>
+    <section>เลขหน้า 3 ตัว รางวัลละ 4,000 บาท
+      <div>123</div><div>355</div>
+    </section>
+    <section>เลขท้าย 3 ตัว รางวัลละ 4,000 บาท
+      <div>456</div><div>868</div>
+    </section>
+    <section>เลขท้าย 2 ตัว รางวัลละ 2,000 บาท
+      <div>77</div>
+    </section>
+  </body></html>`;
+  const p = parseSanookDrawPage(html, "https://x/");
+  const m = prizeMap(p);
+  assert(m.first?.[0] === "309612", `first = 309612 (got ${m.first?.[0]})`);
+  assert(
+    m.front_three?.[0] === "123" && m.front_three?.[1] === "355",
+    `front_three = [123, 355], no 000 phantom (got ${JSON.stringify(m.front_three)})`,
+  );
+  assert(
+    m.last_three?.[0] === "456" && m.last_three?.[1] === "868",
+    `last_three = [456, 868], no 000 phantom (got ${JSON.stringify(m.last_three)})`,
+  );
+  assert(m.last_two?.[0] === "77", `last_two = 77 (got ${m.last_two?.[0]})`);
+  assert(
+    m.first_near?.[0] === "309611" && m.first_near?.[1] === "309613",
+    `first_near = [309611, 309613], no phantom from "100,000" (got ${JSON.stringify(m.first_near)})`,
+  );
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

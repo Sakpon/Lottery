@@ -41,8 +41,11 @@ export default {
     if (req.method === "POST" && url.pathname === "/fetch") {
       const date = url.searchParams.get("date");
       if (!date) return json({ error: "missing ?date=YYYY-MM-DD" }, 400);
-      const added = await fetchAndStoreByDate(env, date);
-      return json({ ok: true, added });
+      // force=1 → ลบหมายเลขเดิมของงวดนั้นก่อนเขียนใหม่ (ใช้ตอน parser ถูกแก้
+      //            แล้วต้องเขียนทับข้อมูลเก่าที่ผิด)
+      const force = url.searchParams.get("force") === "1";
+      const result = await fetchAndStoreByDate(env, date, force);
+      return json({ ok: true, ...result });
     }
 
     if (req.method === "GET" && url.pathname === "/status") {
@@ -87,7 +90,7 @@ async function runBackfill(env: Env, years: number): Promise<number> {
 
   for (const date of dates) {
     try {
-      const n = await fetchAndStoreByDate(env, date);
+      const { added: n } = await fetchAndStoreByDate(env, date);
       added += n;
       if (n === 0) nullParses += 1;
       consecutiveErrors = 0;
@@ -112,18 +115,23 @@ async function runBackfill(env: Env, years: number): Promise<number> {
 }
 
 // ───────────────────────── fetch by date ─────────────────────
-async function fetchAndStoreByDate(env: Env, isoDate: string): Promise<number> {
+async function fetchAndStoreByDate(
+  env: Env,
+  isoDate: string,
+  force = false,
+): Promise<{ added: number; parsed: string[] }> {
   // URL format: /lotto/check/DDMMYYYY/  where YYYY = พ.ศ. (Buddhist year, +543)
   const sanookPath = isoToSanookPath(isoDate);
   const url = `${env.SOURCE_BASE}/check/${sanookPath}/`;
   const html = await fetchHtml(url, env.USER_AGENT);
   const parsed = parseSanookDrawPage(html, url);
-  if (!parsed) return 0;
-  return upsertDraw(env.DB, parsed);
+  if (!parsed) return { added: 0, parsed: [] };
+  const added = await upsertDraw(env.DB, parsed, force);
+  return { added, parsed: parsed.numbers.map((n) => `${n.prizeType}[${n.position}]=${n.number}`) };
 }
 
 // ───────────────────────── storage ───────────────────────────
-async function upsertDraw(db: D1Database, p: ParsedDraw): Promise<number> {
+async function upsertDraw(db: D1Database, p: ParsedDraw, force = false): Promise<number> {
   const existing = await db
     .prepare("SELECT id FROM draws WHERE draw_date = ?")
     .bind(p.drawDate)
@@ -148,6 +156,10 @@ async function upsertDraw(db: D1Database, p: ParsedDraw): Promise<number> {
 
   // เขียนตัวเลขเสมอ — INSERT OR IGNORE จะข้ามเฉพาะ (draw_id, prize_type, position) ที่ซ้ำ
   // ทำให้การ re-scrape หลังแก้ parser เติมเลขที่ขาดได้
+  // force=true → ลบหมายเลขเดิมทั้งหมดของงวดนี้ก่อน เพื่อให้เขียนทับเลขเก่าที่ผิด
+  if (force) {
+    await db.prepare("DELETE FROM numbers WHERE draw_id = ?").bind(drawId).run();
+  }
   const stmts: D1PreparedStatement[] = [];
   for (const n of p.numbers) {
     stmts.push(

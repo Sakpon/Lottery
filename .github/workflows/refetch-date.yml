@@ -60,7 +60,9 @@ jobs:
           printf '%s' "$TOKEN" | npx wrangler secret put ADMIN_TOKEN --config workers/scraper/wrangler.toml
           sleep 8  # secret propagation
 
-          endpoint="${{ steps.scraper.outputs.url }}/fetch?date=${{ inputs.date }}"
+          # force=1 — ลบหมายเลขเดิมของงวดนั้นก่อนเขียนใหม่ เพื่อให้ parser-fix เขียนทับ
+          # เลขเก่าที่ผิดได้ (INSERT OR IGNORE อย่างเดียวไม่พอเมื่อของเก่าเป็นเลขผิด)
+          endpoint="${{ steps.scraper.outputs.url }}/fetch?date=${{ inputs.date }}&force=1"
           echo "POST $endpoint"
           response=$(curl -fsS -X POST "$endpoint" \
             -H "X-Admin-Token: $TOKEN" \
