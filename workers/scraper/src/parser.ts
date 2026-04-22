@@ -83,14 +83,15 @@ export function parseSanookDrawPage(rawHtml: string, sourceUrl: string): ParsedD
 
   const numbers: ParsedNumber[] = [];
 
-  // รางวัลที่ 1 — เลข 6 หลักในบล็อกระหว่าง "รางวัลที่ 1" และ section ถัดไป
-  // หลีกเลี่ยงการชน "รางวัลข้างเคียงรางวัลที่ 1" โดยหาบล็อกหลังคำว่า "รางวัลที่ 1"
-  // ที่ไม่นำหน้าด้วย "ข้างเคียง" (negative lookbehind จำลองด้วย regex plain)
-  const firstBlock = findFirstPrizeBlock(html);
-  if (firstBlock) {
-    const six = firstBlock.match(/(?<!\d)(\d{6})(?!\d)/);
-    if (six) numbers.push({ prizeType: "first", number: six[1], position: 0 });
-  }
+  // รางวัลที่ 1 — หาเลข 6 หลักแรกที่อยู่หลัง date heading และก่อน "รางวัลข้างเคียง"
+  // กลยุทธ์แบบ positional เพื่อเลี่ยงการพึ่งพา label "รางวัลที่ 1" ที่บางหน้าของ sanook
+  // ไม่ปรากฏเป็น plain text
+  const dateEnd = (dateMatch.index ?? 0) + dateMatch[0].length;
+  const nearIdxAbs = html.indexOf("รางวัลข้างเคียง", dateEnd);
+  const firstRegionEnd = nearIdxAbs >= 0 ? nearIdxAbs : Math.min(dateEnd + 5000, html.length);
+  const firstRegion = html.slice(dateEnd, firstRegionEnd);
+  const sixFirst = firstRegion.match(/(?<!\d)(\d{6})(?!\d)/);
+  if (sixFirst) numbers.push({ prizeType: "first", number: sixFirst[1], position: 0 });
 
   // รางวัลข้างเคียงรางวัลที่ 1 — เลข 6 หลัก 2 หมายเลข
   const nearBlock = sliceBetween(html, "รางวัลข้างเคียงรางวัลที่ 1", "รางวัลที่ 2", 4000)
@@ -153,38 +154,6 @@ function normalizeHtml(html: string): string {
       // ลด whitespace ซ้ำ ๆ
       .replace(/[ \t]+/g, " ")
   );
-}
-
-function findFirstPrizeBlock(html: string): string | null {
-  // หา "รางวัลที่ 1" ที่ไม่นำหน้าด้วย "ข้างเคียง"
-  // สแกนทุก occurrence แล้วเลือกอันที่ไม่ได้เป็นส่วนของ "รางวัลข้างเคียงรางวัลที่ 1"
-  const pattern = /รางวัลที่\s*1(?!\s*[กข-ฮ])/g;
-  let m: RegExpExecArray | null;
-  while ((m = pattern.exec(html)) !== null) {
-    const start = m.index;
-    // ตรวจว่าข้างหน้า 20 ตัวอักษรมีคำว่า "ข้างเคียง" ไหม — ถ้ามีให้ข้าม
-    const preview = html.slice(Math.max(0, start - 20), start);
-    if (preview.includes("ข้างเคียง")) continue;
-    // เอาบล็อกไปจนถึง section ถัดไป (รางวัลข้างเคียง/รางวัลที่ 2)
-    const after = html.slice(start, start + 2000);
-    const end =
-      findEarliestIndex(after, [
-        "รางวัลข้างเคียงรางวัลที่ 1",
-        "รางวัลที่ 2",
-        "เลขหน้า 3 ตัว",
-      ]) ?? 2000;
-    return after.slice(0, end);
-  }
-  return null;
-}
-
-function findEarliestIndex(s: string, markers: string[]): number | null {
-  let min: number | null = null;
-  for (const m of markers) {
-    const i = s.indexOf(m);
-    if (i >= 0 && (min === null || i < min)) min = i;
-  }
-  return min;
 }
 
 function sliceBetween(s: string, startMarker: string, endMarker: string, maxLen = 2000): string | null {
