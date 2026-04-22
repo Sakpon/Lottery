@@ -1,0 +1,75 @@
+name: Refetch single draw
+
+# ดึงผลรางวัลงวดเดียวใหม่ (ใช้เมื่อ parser ถูกแก้และต้องการ backfill ตัวเลขที่ขาด)
+# self-contained เหมือน backfill.yml — rotate ADMIN_TOKEN ผ่าน wrangler secret put
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "วันที่งวด (YYYY-MM-DD, AD)"
+        required: true
+        default: "2026-04-16"
+        type: string
+
+concurrency:
+  group: refetch-date-${{ inputs.date }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  refetch:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --no-audit --no-fund
+
+      - name: Resolve D1 ID (required for scraper config)
+        run: |
+          set -euo pipefail
+          id=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="lottery_th") | .uuid')
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "::error::D1 database 'lottery_th' not found — run Bootstrap first"
+            exit 1
+          fi
+          sed -i "s/REPLACE_WITH_D1_ID/$id/g" workers/scraper/wrangler.toml
+
+      - name: Resolve scraper worker URL
+        id: scraper
+        run: |
+          set -euo pipefail
+          sub=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+            | jq -r '.result.subdomain')
+          echo "url=https://lottery-th-scraper.${sub}.workers.dev" >> "$GITHUB_OUTPUT"
+
+      - name: Rotate ADMIN_TOKEN and call /fetch
+        run: |
+          set -euo pipefail
+          TOKEN=$(openssl rand -hex 32)
+          echo "::add-mask::$TOKEN"
+          printf '%s' "$TOKEN" | npx wrangler secret put ADMIN_TOKEN --config workers/scraper/wrangler.toml
+          sleep 8  # secret propagation
+
+          endpoint="${{ steps.scraper.outputs.url }}/fetch?date=${{ inputs.date }}"
+          echo "POST $endpoint"
+          response=$(curl -fsS -X POST "$endpoint" \
+            -H "X-Admin-Token: $TOKEN" \
+            --max-time 120)
+          echo "$response"
+          {
+            echo "## 🔁 Refetch ${{ inputs.date }}"
+            echo ""
+            echo "\`\`\`json"
+            echo "$response"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
