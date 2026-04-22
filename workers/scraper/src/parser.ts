@@ -83,14 +83,12 @@ export function parseSanookDrawPage(rawHtml: string, sourceUrl: string): ParsedD
 
   const numbers: ParsedNumber[] = [];
 
-  // รางวัลที่ 1 — เลข 6 หลักในบล็อกระหว่าง "รางวัลที่ 1" และ section ถัดไป
-  // หลีกเลี่ยงการชน "รางวัลข้างเคียงรางวัลที่ 1" โดยหาบล็อกหลังคำว่า "รางวัลที่ 1"
-  // ที่ไม่นำหน้าด้วย "ข้างเคียง" (negative lookbehind จำลองด้วย regex plain)
-  const firstBlock = findFirstPrizeBlock(html);
-  if (firstBlock) {
-    const six = firstBlock.match(/(?<!\d)(\d{6})(?!\d)/);
-    if (six) numbers.push({ prizeType: "first", number: six[1], position: 0 });
-  }
+  // รางวัลที่ 1 — ลองหลายกลยุทธ์เรียงลำดับจากน่าเชื่อถือมากไปน้อย:
+  //   (1) class-based จาก raw HTML: sanook ใช้ `lotto--black` สำหรับรางวัลที่ 1
+  //   (2) label proximity: เลข 6 หลักถัดจาก "รางวัลที่ 1" ที่ไม่ได้อยู่ใต้ "ข้างเคียง"
+  //   (3) positional: เลข 6 หลักแรกระหว่าง date heading กับ "รางวัลข้างเคียง"
+  const firstPrize = extractFirstPrize(rawHtml, html, dateMatch.index ?? 0, dateMatch[0].length);
+  if (firstPrize) numbers.push({ prizeType: "first", number: firstPrize, position: 0 });
 
   // รางวัลข้างเคียงรางวัลที่ 1 — เลข 6 หลัก 2 หมายเลข
   const nearBlock = sliceBetween(html, "รางวัลข้างเคียงรางวัลที่ 1", "รางวัลที่ 2", 4000)
@@ -147,44 +145,64 @@ function normalizeHtml(html: string): string {
       .replace(/&amp;/g, "&")
       .replace(/&lt;/g, "<")
       .replace(/&gt;/g, ">")
-      // collapse whitespace ที่อยู่ "ระหว่างตัวเลข" ให้ติดกัน
-      // "3 0 9 6 1 2" → "309612" (สำหรับหน้าเลขที่แต่ละหลักแยก span)
-      .replace(/\d[\d\s]*\d/g, (m) => m.replace(/\s+/g, ""))
+      // collapse whitespace ที่อยู่ "ระหว่างตัวเลขที่แยกเป็นหลักเดี่ยว" ให้ติดกัน
+      // "3 0 9 6 1 2" → "309612" (หน้าที่แต่ละหลักอยู่ใน span แยก)
+      // เงื่อนไข: ทุกหลักคั่นด้วย whitespace หลักเดียว (\d( \d)+) เพื่อไม่ให้เผลอรวม
+      // สองหมายเลขที่อยู่ติดกันเช่น "355 868" → "355868"
+      .replace(/(?<!\d)\d(?:\s+\d){2,}(?!\d)/g, (m) => m.replace(/\s+/g, ""))
       // ลด whitespace ซ้ำ ๆ
       .replace(/[ \t]+/g, " ")
   );
 }
 
-function findFirstPrizeBlock(html: string): string | null {
-  // หา "รางวัลที่ 1" ที่ไม่นำหน้าด้วย "ข้างเคียง"
-  // สแกนทุก occurrence แล้วเลือกอันที่ไม่ได้เป็นส่วนของ "รางวัลข้างเคียงรางวัลที่ 1"
-  const pattern = /รางวัลที่\s*1(?!\s*[กข-ฮ])/g;
-  let m: RegExpExecArray | null;
-  while ((m = pattern.exec(html)) !== null) {
-    const start = m.index;
-    // ตรวจว่าข้างหน้า 20 ตัวอักษรมีคำว่า "ข้างเคียง" ไหม — ถ้ามีให้ข้าม
-    const preview = html.slice(Math.max(0, start - 20), start);
-    if (preview.includes("ข้างเคียง")) continue;
-    // เอาบล็อกไปจนถึง section ถัดไป (รางวัลข้างเคียง/รางวัลที่ 2)
-    const after = html.slice(start, start + 2000);
-    const end =
-      findEarliestIndex(after, [
-        "รางวัลข้างเคียงรางวัลที่ 1",
-        "รางวัลที่ 2",
-        "เลขหน้า 3 ตัว",
-      ]) ?? 2000;
-    return after.slice(0, end);
+/**
+ * ดึงรางวัลที่ 1 แบบหลายกลยุทธ์ — คืน string 6 หลักหรือ null
+ *
+ * @param rawHtml  HTML ดิบ (ยังไม่ strip tags) — ใช้จับ class="lotto--black"
+ * @param html     HTML ที่ผ่าน normalizeHtml แล้ว — ใช้จับด้วย label/position
+ * @param dateIdx  ดัชนีเริ่มต้นของ date heading ใน html
+ * @param dateLen  ความยาวของ date heading ที่ match ได้
+ */
+function extractFirstPrize(
+  rawHtml: string,
+  html: string,
+  dateIdx: number,
+  dateLen: number,
+): string | null {
+  // (1) class-based: sanook ใช้ <div class="lotto__number lotto--black">XXXXXX</div>
+  //     จับช่วง ~1000 ตัวอักษรหลัง opening tag แล้วดึงเลข 6 หลักแรก
+  //     (รองรับทั้งกรณีเลขอยู่ต่อกันและกรณีแยกเป็น span ทีละหลัก)
+  const classRe = /class\s*=\s*"[^"]*\blotto--black\b[^"]*"[^>]*>([\s\S]{0,1000})/g;
+  for (const m of rawHtml.matchAll(classRe)) {
+    const text = m[1]
+      .replace(/<[^>]+>/g, " ")
+      .replace(/(?<!\d)\d(?:\s+\d){2,}(?!\d)/g, (s) => s.replace(/\s+/g, ""));
+    const six = text.match(/(?<!\d)(\d{6})(?!\d)/);
+    if (six) return six[1];
   }
-  return null;
-}
 
-function findEarliestIndex(s: string, markers: string[]): number | null {
-  let min: number | null = null;
-  for (const m of markers) {
-    const i = s.indexOf(m);
-    if (i >= 0 && (min === null || i < min)) min = i;
+  // (2) label proximity: หา "รางวัลที่ 1" ที่ "ไม่ใช่" ส่วนของ "ข้างเคียงรางวัลที่ 1"
+  //     แล้วเอาเลข 6 หลักถัดไปภายในช่วงสั้น ๆ
+  const label = "รางวัลที่ 1";
+  let cursor = 0;
+  while (cursor < html.length) {
+    const i = html.indexOf(label, cursor);
+    if (i < 0) break;
+    const before = html.slice(Math.max(0, i - 20), i);
+    cursor = i + label.length;
+    if (before.includes("ข้างเคียง")) continue;
+    const window = html.slice(cursor, Math.min(cursor + 500, html.length));
+    const six = window.match(/(?<!\d)(\d{6})(?!\d)/);
+    if (six) return six[1];
   }
-  return min;
+
+  // (3) positional: เลข 6 หลักแรกระหว่าง date heading กับ "รางวัลข้างเคียง"
+  const dateEnd = dateIdx + dateLen;
+  const nearIdx = html.indexOf("รางวัลข้างเคียง", dateEnd);
+  const end = nearIdx >= 0 ? nearIdx : Math.min(dateEnd + 5000, html.length);
+  const region = html.slice(dateEnd, end);
+  const six = region.match(/(?<!\d)(\d{6})(?!\d)/);
+  return six ? six[1] : null;
 }
 
 function sliceBetween(s: string, startMarker: string, endMarker: string, maxLen = 2000): string | null {

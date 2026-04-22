@@ -16,7 +16,8 @@
     "db:init": "wrangler d1 execute lottery_th --file=data/schema/schema.sql",
     "db:init:local": "wrangler d1 execute lottery_th --local --file=data/schema/schema.sql",
     "backfill": "node scripts/backfill.mjs",
-    "seed:local": "wrangler d1 execute lottery_th --local --file=data/seed/recent.sql"
+    "seed:local": "wrangler d1 execute lottery_th --local --file=data/seed/recent.sql",
+    "test:parser": "node --experimental-strip-types scripts/test-parser.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250101.0",
