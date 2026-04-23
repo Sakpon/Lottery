@@ -539,6 +539,33 @@ main { flex: 1; padding-bottom: var(--s-12); }
 @media (min-width: 960px) {
   .rank-list { grid-template-columns: repeat(5, 1fr); }
 }
+
+/* Compact variant for the home-page recommended-first section: show 3 across
+   once we have room, since we only ever render top-3 here. */
+.rank-list-compact { grid-template-columns: 1fr; }
+@media (min-width: 560px) {
+  .rank-list-compact { grid-template-columns: repeat(3, 1fr); }
+}
+@media (min-width: 960px) {
+  .rank-list-compact { grid-template-columns: repeat(3, 1fr); }
+}
+.rank-list-compact .rank-number { font-size: var(--fs-2xl); letter-spacing: 0.04em; }
+
+.recommend-section { padding-block: var(--s-4); }
+.recommend-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s-3); margin-bottom: var(--s-3);
+}
+.recommend-head h2 { font-size: var(--fs-xl); margin: 0; }
+.link-more {
+  font-size: var(--fs-sm); color: var(--color-primary);
+  text-decoration: none; font-weight: 600;
+}
+.link-more:hover { text-decoration: underline; }
+.recommend-note {
+  margin-top: var(--s-3);
+  font-size: var(--fs-xs); color: var(--color-text-muted);
+}
 .rank-item {
   position: relative;
   background: var(--color-surface);
