@@ -89,9 +89,9 @@ function sqlForDraw(d) {
   };
 
   if (first) push("first", first, 0);
-  (firstNear ?? []).slice(0, 2).forEach((n, i) => push("first_near", n, i));
-  (frontThree ?? []).slice(0, 2).forEach((n, i) => push("front_three", n, i));
-  (lastThree ?? []).slice(0, 2).forEach((n, i) => push("last_three", n, i));
+  (firstNear ?? []).forEach((n, i) => push("first_near", n, i));
+  (frontThree ?? []).forEach((n, i) => push("front_three", n, i));
+  (lastThree ?? []).forEach((n, i) => push("last_three", n, i));
   if (lastTwo) push("last_two", lastTwo, 0);
 
   return stmts.join("\n");
