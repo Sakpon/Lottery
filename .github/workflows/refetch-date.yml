@@ -64,9 +64,28 @@ jobs:
           # เลขเก่าที่ผิดได้ (INSERT OR IGNORE อย่างเดียวไม่พอเมื่อของเก่าเป็นเลขผิด)
           endpoint="${{ steps.scraper.outputs.url }}/fetch?date=${{ inputs.date }}&force=1"
           echo "POST $endpoint"
-          response=$(curl -fsS -X POST "$endpoint" \
-            -H "X-Admin-Token: $TOKEN" \
-            --max-time 120)
+
+          # Retry on 401 — CF Worker secret propagation is eventually consistent.
+          response=""
+          for attempt in 1 2 3 4 5; do
+            http_code=$(curl -sS -o /tmp/refetch_resp.json -w "%{http_code}" \
+              -X POST "$endpoint" \
+              -H "X-Admin-Token: $TOKEN" \
+              --max-time 120 || echo "000")
+            if [ "$http_code" = "200" ]; then
+              response=$(cat /tmp/refetch_resp.json)
+              break
+            fi
+            if [ "$http_code" = "401" ] && [ "$attempt" -lt 5 ]; then
+              wait=$((attempt * 5))
+              echo "::warning::got 401 on attempt $attempt — waiting ${wait}s for secret propagation"
+              sleep "$wait"
+              continue
+            fi
+            echo "::error::refetch failed: HTTP $http_code"
+            cat /tmp/refetch_resp.json || true
+            exit 1
+          done
           echo "$response"
           {
             echo "## 🔁 Refetch ${{ inputs.date }}"
