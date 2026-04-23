@@ -13,6 +13,11 @@ on:
         required: true
         default: "20"
         type: string
+      force:
+        description: "ลบหมายเลขเดิมก่อนเขียนใหม่ (ใช้เมื่อ parser ถูกแก้และต้องเขียนทับข้อมูลเก่าที่ผิด)"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: backfill
@@ -66,7 +71,11 @@ jobs:
           printf '%s' "$TOKEN" | npx wrangler secret put ADMIN_TOKEN --config workers/scraper/wrangler.toml
           sleep 8  # secret propagation
 
-          endpoint="${{ steps.scraper.outputs.url }}/backfill?years=${{ inputs.years }}"
+          # force=1 → ลบหมายเลขเดิมของทุกงวดก่อนเขียนใหม่ (ต้องใช้หลังแก้ parser bug
+          #            ที่ทำให้ข้อมูลเก่าถูกจัดเก็บผิด — INSERT OR IGNORE อย่างเดียวไม่พอ)
+          FORCE_QS=""
+          if [ "${{ inputs.force }}" = "true" ]; then FORCE_QS="&force=1"; fi
+          endpoint="${{ steps.scraper.outputs.url }}/backfill?years=${{ inputs.years }}${FORCE_QS}"
           echo "POST $endpoint"
           response=$(curl -fsS -X POST "$endpoint" \
             -H "X-Admin-Token: $TOKEN" \
