@@ -118,19 +118,43 @@ async function runBackfill(env: Env, years: number, force = false): Promise<numb
 }
 
 // ───────────────────────── fetch by date ─────────────────────
+interface FetchResult {
+  added: number;
+  parsed: string[];
+  url: string;
+  /** Diagnostic: only set when parser returned null. Helps pinpoint whether
+   *  sanook served an unrecognised page format vs. a redirect/error stub. */
+  debug?: { httpBytes: number; titleSnippet: string };
+}
+
 async function fetchAndStoreByDate(
   env: Env,
   isoDate: string,
   force = false,
-): Promise<{ added: number; parsed: string[] }> {
+): Promise<FetchResult> {
   // URL format: /lotto/check/DDMMYYYY/  where YYYY = พ.ศ. (Buddhist year, +543)
   const sanookPath = isoToSanookPath(isoDate);
   const url = `${env.SOURCE_BASE}/check/${sanookPath}/`;
   const html = await fetchHtml(url, env.USER_AGENT);
   const parsed = parseSanookDrawPage(html, url);
-  if (!parsed) return { added: 0, parsed: [] };
+  if (!parsed) {
+    const titleMatch = html.match(/<title[^>]*>([^<]{0,200})<\/title>/i);
+    return {
+      added: 0,
+      parsed: [],
+      url,
+      debug: {
+        httpBytes: html.length,
+        titleSnippet: (titleMatch?.[1] ?? "(no <title>)").trim().slice(0, 200),
+      },
+    };
+  }
   const added = await upsertDraw(env.DB, parsed, force);
-  return { added, parsed: parsed.numbers.map((n) => `${n.prizeType}[${n.position}]=${n.number}`) };
+  return {
+    added,
+    parsed: parsed.numbers.map((n) => `${n.prizeType}[${n.position}]=${n.number}`),
+    url,
+  };
 }
 
 // ───────────────────────── storage ───────────────────────────
