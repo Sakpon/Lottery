@@ -34,7 +34,10 @@ export default {
 
     if (req.method === "POST" && url.pathname === "/backfill") {
       const years = Number(url.searchParams.get("years") ?? env.BACKFILL_YEARS ?? "20");
-      const added = await runBackfill(env, years);
+      // force=1 → ลบหมายเลขเดิมของทุกงวดก่อนเขียนใหม่ (ใช้หลังแก้ parser bug
+      //            เพื่อให้ข้อมูลเก่าที่ผิดถูกเขียนทับทั้งหมด)
+      const force = url.searchParams.get("force") === "1";
+      const added = await runBackfill(env, years, force);
       return json({ ok: true, added });
     }
 
@@ -80,7 +83,7 @@ async function runScheduled(env: Env): Promise<void> {
 }
 
 // ───────────────────────── backfill ──────────────────────────
-async function runBackfill(env: Env, years: number): Promise<number> {
+async function runBackfill(env: Env, years: number, force = false): Promise<number> {
   // งวดที่ 1 และ 16 ของแต่ละเดือน ย้อนหลัง N ปี = ประมาณ N*24 งวด
   const dates = enumerateDrawDates(years);
   let added = 0;
@@ -90,7 +93,7 @@ async function runBackfill(env: Env, years: number): Promise<number> {
 
   for (const date of dates) {
     try {
-      const { added: n } = await fetchAndStoreByDate(env, date);
+      const { added: n } = await fetchAndStoreByDate(env, date, force);
       added += n;
       if (n === 0) nullParses += 1;
       consecutiveErrors = 0;
