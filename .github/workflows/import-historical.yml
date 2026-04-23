@@ -1,0 +1,84 @@
+name: Import historical draws
+
+# โหลดข้อมูลผลสลากย้อนหลังจาก JSON file (ไม่ต้องผ่าน sanook)
+# commit JSON ไว้ที่ path ตาม input แล้วกด Run workflow
+# format ของไฟล์: scripts/import-historical.mjs มี docstring อธิบาย
+#
+# ต้องมี secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: "path ของ JSON ใน repo (เช่น data/historical/draws.json)"
+        required: true
+        default: "data/historical/draws.json"
+        type: string
+      replace:
+        description: "ลบ numbers เดิมของงวดก่อนเขียนใหม่ (ใช้ถ้าต้องการ overwrite งวดที่มีอยู่)"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: import-historical
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --no-audit --no-fund
+
+      - name: Verify input file exists
+        run: |
+          if [ ! -f "${{ inputs.file }}" ]; then
+            echo "::error::file not found: ${{ inputs.file }}"
+            echo "commit the JSON first, then re-run this workflow"
+            exit 1
+          fi
+          size=$(stat -c%s "${{ inputs.file }}")
+          count=$(jq '. | length' "${{ inputs.file }}")
+          echo "file: ${{ inputs.file }} (${size} bytes, ${count} draws)"
+
+      - name: Resolve D1 ID (required for wrangler remote)
+        run: |
+          set -euo pipefail
+          id=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="lottery_th") | .uuid')
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "::error::D1 database 'lottery_th' not found — run Bootstrap first"
+            exit 1
+          fi
+          sed -i "s/REPLACE_WITH_D1_ID/$id/g" workers/scraper/wrangler.toml
+
+      - name: Import
+        run: |
+          set -euo pipefail
+          FLAGS=""
+          if [ "${{ inputs.replace }}" = "true" ]; then FLAGS="--replace"; fi
+          node scripts/import-historical.mjs "${{ inputs.file }}" $FLAGS
+
+      - name: Post-import status
+        run: |
+          set -euo pipefail
+          total=$(npx wrangler d1 execute lottery_th --remote --command "SELECT COUNT(*) as c FROM draws;" --json | jq -r '.[0].results[0].c')
+          earliest=$(npx wrangler d1 execute lottery_th --remote --command "SELECT MIN(draw_date) as d FROM draws;" --json | jq -r '.[0].results[0].d')
+          latest=$(npx wrangler d1 execute lottery_th --remote --command "SELECT MAX(draw_date) as d FROM draws;" --json | jq -r '.[0].results[0].d')
+          {
+            echo "## 📥 Import complete"
+            echo ""
+            echo "- total draws: **$total**"
+            echo "- earliest: **$earliest**"
+            echo "- latest: **$latest**"
+          } >> "$GITHUB_STEP_SUMMARY"
