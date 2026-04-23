@@ -39,6 +39,11 @@ const THAI_MONTHS: Record<string, number> = {
   "กันยายน": 9, "ตุลาคม": 10, "พฤศจิกายน": 11, "ธันวาคม": 12,
 };
 
+const THAI_MONTH_NAMES = [
+  "", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+];
+
 /** ดึงรายการ URL งวดล่าสุดจากหน้า listing ของ sanook */
 export async function listSanookArchiveUrls(
   base: string,
@@ -67,14 +72,47 @@ export function parseSanookDrawPage(rawHtml: string, sourceUrl: string): ParsedD
   // เพื่อให้ pattern เช่น "<span>3</span><span>0</span>..." กลายเป็น "30..." ที่ regex จับได้
   const html = normalizeHtml(rawHtml);
 
-  // ดึง title/heading → "งวดวันที่ 1 เมษายน 2569"
-  const dateMatch = html.match(
-    /งวด(?:ประจำ|)วันที่\s*(\d{1,2})\s*([฀-๿]+)\s*(\d{4})/,
-  );
-  if (!dateMatch) return null;
-  const day = Number(dateMatch[1]);
-  const monthName = dateMatch[2];
-  const yearBe = Number(dateMatch[3]);
+  // หา date heading ของ "งวดที่กำลัง scrape" จริง ๆ (ไม่ใช่ widget ผลล่าสุด
+  // ที่อยู่ส่วนบนของหน้า archive เก่า) — ใช้วันที่จาก URL เป็น anchor ก่อน
+  // แล้วค่อย fallback เป็น regex ทั่วไปสำหรับ source ที่ไม่มีวันที่ใน path
+  const expected = parseSanookCheckDate(sourceUrl);
+  let dateIdx = -1;
+  let dateLen = 0;
+  let day = 0;
+  let monthName = "";
+  let yearBe = 0;
+
+  if (expected) {
+    const candidates = [
+      `งวดวันที่ ${expected.day} ${expected.monthName} ${expected.yearBe}`,
+      `งวดประจำวันที่ ${expected.day} ${expected.monthName} ${expected.yearBe}`,
+    ];
+    for (const c of candidates) {
+      const i = html.indexOf(c);
+      if (i >= 0 && (dateIdx < 0 || i < dateIdx)) {
+        dateIdx = i;
+        dateLen = c.length;
+      }
+    }
+    if (dateIdx >= 0) {
+      day = expected.day;
+      monthName = expected.monthName;
+      yearBe = expected.yearBe;
+    }
+  }
+
+  if (dateIdx < 0) {
+    const dateMatch = html.match(
+      /งวด(?:ประจำ|)วันที่\s*(\d{1,2})\s*([฀-๿]+)\s*(\d{4})/,
+    );
+    if (!dateMatch) return null;
+    day = Number(dateMatch[1]);
+    monthName = dateMatch[2];
+    yearBe = Number(dateMatch[3]);
+    dateIdx = dateMatch.index ?? 0;
+    dateLen = dateMatch[0].length;
+  }
+
   const month = THAI_MONTHS[monthName];
   if (!month) return null;
   const yearAd = yearBe - 543;
@@ -83,16 +121,26 @@ export function parseSanookDrawPage(rawHtml: string, sourceUrl: string): ParsedD
 
   const numbers: ParsedNumber[] = [];
 
+  // หน้าผลของ sanook สำหรับงวดเก่ามักมี "ผลล่าสุด" widget ตอนต้นหน้า ทำให้
+  // selector ทุกชนิด (class, label, position) จับเลขจาก widget แทนของจริง — เลื่อน
+  // จุดเริ่มทุกการค้นหาให้อยู่หลัง date heading ก่อนเสมอ
+  const dateEnd = dateIdx + dateLen;
+  const htmlAfter = html.slice(dateEnd);
+
+  // ฝั่ง raw HTML ก็เลื่อนจุดเริ่มเหมือนกัน — ใช้ทั้ง drawDateTh ("16 มกราคม 2563")
+  // และ "งวดวันที่ 16 มกราคม 2563" เป็น anchor; เก็บค่าที่เร็วที่สุดที่เจอ
+  const rawAfter = sliceRawAfterDate(rawHtml, day, monthName, yearBe);
+
   // รางวัลที่ 1 — ลองหลายกลยุทธ์เรียงลำดับจากน่าเชื่อถือมากไปน้อย:
   //   (1) class-based จาก raw HTML: sanook ใช้ `lotto--black` สำหรับรางวัลที่ 1
   //   (2) label proximity: เลข 6 หลักถัดจาก "รางวัลที่ 1" ที่ไม่ได้อยู่ใต้ "ข้างเคียง"
-  //   (3) positional: เลข 6 หลักแรกระหว่าง date heading กับ "รางวัลข้างเคียง"
-  const firstPrize = extractFirstPrize(rawHtml, html, dateMatch.index ?? 0, dateMatch[0].length);
+  //   (3) positional: เลข 6 หลักแรกในช่วง htmlAfter ก่อน "รางวัลข้างเคียง"
+  const firstPrize = extractFirstPrize(rawAfter, htmlAfter);
   if (firstPrize) numbers.push({ prizeType: "first", number: firstPrize, position: 0 });
 
   // รางวัลข้างเคียงรางวัลที่ 1 — เลข 6 หลัก 2 หมายเลข
-  const nearBlock = sliceBetween(html, "รางวัลข้างเคียงรางวัลที่ 1", "รางวัลที่ 2", 4000)
-    ?? sliceBetween(html, "รางวัลข้างเคียงรางวัลที่ 1", "เลขหน้า 3 ตัว", 4000);
+  const nearBlock = sliceBetween(htmlAfter, "รางวัลข้างเคียงรางวัลที่ 1", "รางวัลที่ 2", 4000)
+    ?? sliceBetween(htmlAfter, "รางวัลข้างเคียงรางวัลที่ 1", "เลขหน้า 3 ตัว", 4000);
   if (nearBlock) {
     const six = Array.from(nearBlock.matchAll(/(?<!\d)(\d{6})(?!\d)/g)).map((m) => m[1]);
     six.slice(0, 2).forEach((n, i) =>
@@ -101,7 +149,7 @@ export function parseSanookDrawPage(rawHtml: string, sourceUrl: string): ParsedD
   }
 
   // เลขหน้า 3 ตัว
-  const frontBlock = sliceBetween(html, "เลขหน้า 3 ตัว", "เลขท้าย 3 ตัว", 4000);
+  const frontBlock = sliceBetween(htmlAfter, "เลขหน้า 3 ตัว", "เลขท้าย 3 ตัว", 4000);
   if (frontBlock) {
     const three = Array.from(frontBlock.matchAll(/(?<!\d)(\d{3})(?!\d)/g)).map((m) => m[1]);
     three.slice(0, 2).forEach((n, i) =>
@@ -110,7 +158,7 @@ export function parseSanookDrawPage(rawHtml: string, sourceUrl: string): ParsedD
   }
 
   // เลขท้าย 3 ตัว
-  const backBlock = sliceBetween(html, "เลขท้าย 3 ตัว", "เลขท้าย 2 ตัว", 4000);
+  const backBlock = sliceBetween(htmlAfter, "เลขท้าย 3 ตัว", "เลขท้าย 2 ตัว", 4000);
   if (backBlock) {
     const three = Array.from(backBlock.matchAll(/(?<!\d)(\d{3})(?!\d)/g)).map((m) => m[1]);
     three.slice(0, 2).forEach((n, i) =>
@@ -119,8 +167,8 @@ export function parseSanookDrawPage(rawHtml: string, sourceUrl: string): ParsedD
   }
 
   // เลขท้าย 2 ตัว
-  const lastTwoBlock = sliceBetween(html, "เลขท้าย 2 ตัว", "</body", 4000)
-    ?? sliceBetween(html, "เลขท้าย 2 ตัว", "รางวัลที่ 2", 4000);
+  const lastTwoBlock = sliceBetween(htmlAfter, "เลขท้าย 2 ตัว", "</body", 4000)
+    ?? sliceBetween(htmlAfter, "เลขท้าย 2 ตัว", "รางวัลที่ 2", 4000);
   if (lastTwoBlock) {
     const two = lastTwoBlock.match(/(?<!\d)(\d{2})(?!\d)/);
     if (two) numbers.push({ prizeType: "last_two", number: two[1], position: 0 });
@@ -162,22 +210,16 @@ function normalizeHtml(html: string): string {
 /**
  * ดึงรางวัลที่ 1 แบบหลายกลยุทธ์ — คืน string 6 หลักหรือ null
  *
- * @param rawHtml  HTML ดิบ (ยังไม่ strip tags) — ใช้จับ class="lotto--black"
- * @param html     HTML ที่ผ่าน normalizeHtml แล้ว — ใช้จับด้วย label/position
- * @param dateIdx  ดัชนีเริ่มต้นของ date heading ใน html
- * @param dateLen  ความยาวของ date heading ที่ match ได้
+ * @param rawAfter  raw HTML นับจากหลัง date heading (ลด false-positive จาก
+ *                  widget "ผลล่าสุด" ตอนต้นหน้า)
+ * @param htmlAfter HTML ที่ผ่าน normalizeHtml แล้ว นับจากหลัง date heading
  */
-function extractFirstPrize(
-  rawHtml: string,
-  html: string,
-  dateIdx: number,
-  dateLen: number,
-): string | null {
+function extractFirstPrize(rawAfter: string, htmlAfter: string): string | null {
   // (1) class-based: sanook ใช้ <div class="lotto__number lotto--black">XXXXXX</div>
   //     จับช่วง ~1000 ตัวอักษรหลัง opening tag แล้วดึงเลข 6 หลักแรก
   //     (รองรับทั้งกรณีเลขอยู่ต่อกันและกรณีแยกเป็น span ทีละหลัก)
   const classRe = /class\s*=\s*"[^"]*\blotto--black\b[^"]*"[^>]*>([\s\S]{0,1000})/g;
-  for (const m of rawHtml.matchAll(classRe)) {
+  for (const m of rawAfter.matchAll(classRe)) {
     const text = m[1]
       .replace(/<[^>]+>/g, " ")
       .replace(/(?<!\d)\d(?:\s+\d){2,}(?!\d)/g, (s) => s.replace(/\s+/g, ""));
@@ -189,24 +231,64 @@ function extractFirstPrize(
   //     แล้วเอาเลข 6 หลักถัดไปภายในช่วงสั้น ๆ
   const label = "รางวัลที่ 1";
   let cursor = 0;
-  while (cursor < html.length) {
-    const i = html.indexOf(label, cursor);
+  while (cursor < htmlAfter.length) {
+    const i = htmlAfter.indexOf(label, cursor);
     if (i < 0) break;
-    const before = html.slice(Math.max(0, i - 20), i);
+    const before = htmlAfter.slice(Math.max(0, i - 20), i);
     cursor = i + label.length;
     if (before.includes("ข้างเคียง")) continue;
-    const window = html.slice(cursor, Math.min(cursor + 500, html.length));
+    const window = htmlAfter.slice(cursor, Math.min(cursor + 500, htmlAfter.length));
     const six = window.match(/(?<!\d)(\d{6})(?!\d)/);
     if (six) return six[1];
   }
 
-  // (3) positional: เลข 6 หลักแรกระหว่าง date heading กับ "รางวัลข้างเคียง"
-  const dateEnd = dateIdx + dateLen;
-  const nearIdx = html.indexOf("รางวัลข้างเคียง", dateEnd);
-  const end = nearIdx >= 0 ? nearIdx : Math.min(dateEnd + 5000, html.length);
-  const region = html.slice(dateEnd, end);
+  // (3) positional: เลข 6 หลักแรกก่อน "รางวัลข้างเคียง"
+  const nearIdx = htmlAfter.indexOf("รางวัลข้างเคียง");
+  const end = nearIdx >= 0 ? nearIdx : Math.min(5000, htmlAfter.length);
+  const region = htmlAfter.slice(0, end);
   const six = region.match(/(?<!\d)(\d{6})(?!\d)/);
   return six ? six[1] : null;
+}
+
+/**
+ * คืนช่วง raw HTML ที่อยู่หลัง date heading "งวดวันที่ DD <month> YYYY".
+ * เลือก index ที่เร็วที่สุดที่เจอข้อความนั้น — ถ้าไม่พบ (เช่น tag คั่นกลาง
+ * ทำให้ raw HTML ไม่มี substring ตรงตัว) คืน rawHtml ทั้งก้อนเป็น fallback
+ * เพื่อไม่ให้ pipeline เสียทั้งหมด
+ */
+function sliceRawAfterDate(
+  rawHtml: string,
+  day: number,
+  monthName: string,
+  yearBe: number,
+): string {
+  const candidates = [
+    `งวดวันที่ ${day} ${monthName} ${yearBe}`,
+    `งวดประจำวันที่ ${day} ${monthName} ${yearBe}`,
+  ];
+  let best = -1;
+  for (const c of candidates) {
+    const i = rawHtml.indexOf(c);
+    if (i >= 0 && (best < 0 || i < best)) best = i + c.length;
+  }
+  return best >= 0 ? rawHtml.slice(best) : rawHtml;
+}
+
+/**
+ * ดึงวันที่ของงวดจาก sanook check URL เช่น
+ *   https://news.sanook.com/lotto/check/16012563/  →  day=16, month=มกราคม, yearBe=2563
+ * คืน null ถ้า URL ไม่ตรง pattern
+ */
+function parseSanookCheckDate(
+  url: string,
+): { day: number; monthName: string; yearBe: number } | null {
+  const m = url.match(/\/check\/(\d{2})(\d{2})(\d{4})\/?/);
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const yearBe = Number(m[3]);
+  if (month < 1 || month > 12) return null;
+  return { day, monthName: THAI_MONTH_NAMES[month], yearBe };
 }
 
 function sliceBetween(s: string, startMarker: string, endMarker: string, maxLen = 2000): string | null {
