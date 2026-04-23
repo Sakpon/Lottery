@@ -47,6 +47,12 @@ export default {
       // force=1 → ลบหมายเลขเดิมของงวดนั้นก่อนเขียนใหม่ (ใช้ตอน parser ถูกแก้
       //            แล้วต้องเขียนทับข้อมูลเก่าที่ผิด)
       const force = url.searchParams.get("force") === "1";
+      // debug=1 → ไม่เขียน DB, คืน snippet ของ HTML รอบ ๆ คำว่า "งวด" ทุกจุด
+      //            ใช้ debug เวลา parser anchor ไม่เจอ heading ที่คาด
+      if (url.searchParams.get("debug") === "1") {
+        const result = await fetchForDebug(env, date);
+        return json(result);
+      }
       const result = await fetchAndStoreByDate(env, date, force);
       return json({ ok: true, ...result });
     }
@@ -115,6 +121,43 @@ async function runBackfill(env: Env, years: number, force = false): Promise<numb
     `years=${years} tried=${dates.length} added=${added} nullParses=${nullParses} errors=${errors}`,
   );
   return added;
+}
+
+// ───────────────────────── debug ─────────────────────────────
+// คืน snippet รอบ ๆ คำว่า "งวด" ทุกตำแหน่งในหน้าผลสลาก (ทั้งก่อน/หลัง normalize)
+// ใช้ดูว่าข้อความ heading จริงบนหน้า sanook เขียนอย่างไร เพื่อปรับ anchor ใน parser
+async function fetchForDebug(env: Env, isoDate: string): Promise<unknown> {
+  const sanookPath = isoToSanookPath(isoDate);
+  const url = `${env.SOURCE_BASE}/check/${sanookPath}/`;
+  const html = await fetchHtml(url, env.USER_AGENT);
+
+  // normalize แบบเดียวกับ parser (strip script/style/tags, decode entities)
+  const normalized = html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/[ \t]+/g, " ");
+
+  const headings: string[] = [];
+  const re = /งวด[^\n<]{0,80}/g;
+  for (const m of normalized.matchAll(re)) {
+    headings.push(m[0].trim().slice(0, 120));
+    if (headings.length >= 15) break;
+  }
+
+  const titleMatch = html.match(/<title[^>]*>([^<]{0,200})<\/title>/i);
+
+  return {
+    ok: true,
+    url,
+    httpBytes: html.length,
+    title: titleMatch?.[1]?.trim().slice(0, 200) ?? null,
+    headings,
+    // ส่ง normalize ส่วนต้น ๆ กลับมาดูก็ได้ ตัดให้พอสำหรับตรวจ
+    normalizedHead: normalized.slice(0, 1500),
+  };
 }
 
 // ───────────────────────── fetch by date ─────────────────────
