@@ -77,9 +77,31 @@ jobs:
           if [ "${{ inputs.force }}" = "true" ]; then FORCE_QS="&force=1"; fi
           endpoint="${{ steps.scraper.outputs.url }}/backfill?years=${{ inputs.years }}${FORCE_QS}"
           echo "POST $endpoint"
-          response=$(curl -fsS -X POST "$endpoint" \
-            -H "X-Admin-Token: $TOKEN" \
-            --max-time 1500)
+
+          # Retry on 401 — Cloudflare Worker secret propagation is eventually
+          # consistent; 8 s usually works but occasionally isn't enough. Retry
+          # a handful of times with increasing backoff before giving up.
+          response=""
+          for attempt in 1 2 3 4 5; do
+            http_code=$(curl -sS -o /tmp/backfill_resp.json -w "%{http_code}" \
+              -X POST "$endpoint" \
+              -H "X-Admin-Token: $TOKEN" \
+              --max-time 1500 || echo "000")
+            if [ "$http_code" = "200" ]; then
+              response=$(cat /tmp/backfill_resp.json)
+              break
+            fi
+            if [ "$http_code" = "401" ] && [ "$attempt" -lt 5 ]; then
+              wait=$((attempt * 5))
+              echo "::warning::got 401 on attempt $attempt — waiting ${wait}s for secret propagation"
+              sleep "$wait"
+              continue
+            fi
+            echo "::error::backfill failed: HTTP $http_code"
+            cat /tmp/backfill_resp.json || true
+            exit 1
+          done
+          echo "$response"
           echo "$response"
           added=$(echo "$response" | jq -r '.added // 0')
           {
