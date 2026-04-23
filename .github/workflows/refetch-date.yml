@@ -11,6 +11,11 @@ on:
         required: true
         default: "2026-04-16"
         type: string
+      debug:
+        description: "ไม่เขียน DB, คืน snippet ของ HTML (สำหรับปรับ parser)"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: refetch-date-${{ inputs.date }}
@@ -62,7 +67,10 @@ jobs:
 
           # force=1 — ลบหมายเลขเดิมของงวดนั้นก่อนเขียนใหม่ เพื่อให้ parser-fix เขียนทับ
           # เลขเก่าที่ผิดได้ (INSERT OR IGNORE อย่างเดียวไม่พอเมื่อของเก่าเป็นเลขผิด)
-          endpoint="${{ steps.scraper.outputs.url }}/fetch?date=${{ inputs.date }}&force=1"
+          # debug=1 — ไม่เขียน DB, คืน snippet ของ HTML ให้ tune parser
+          QS="&force=1"
+          if [ "${{ inputs.debug }}" = "true" ]; then QS="&debug=1"; fi
+          endpoint="${{ steps.scraper.outputs.url }}/fetch?date=${{ inputs.date }}${QS}"
           echo "POST $endpoint"
 
           # Retry on 401 — CF Worker secret propagation is eventually consistent.
