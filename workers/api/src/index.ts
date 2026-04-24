@@ -176,7 +176,7 @@ async function getPrediction(env: Env, prizeType: PrizeType, topK: number): Prom
        FROM numbers n JOIN draws d ON d.id = n.draw_id
       WHERE n.prize_type = ?
       ORDER BY d.draw_date DESC
-      LIMIT 500`,
+      LIMIT 2500`,
   ).bind(prizeType).all<{ draw_date: string; number: string; position: number; prize_type: PrizeType }>();
 
   const history: HistoricalNumber[] = (rows.results ?? []).map((r) => ({
