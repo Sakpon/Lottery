@@ -9,6 +9,7 @@
 
 import { parseSanookDrawPage, listSanookArchiveUrls } from "./parser";
 import type { ParsedDraw } from "./parser";
+import { backtestDraw, backtestRange } from "./backtest";
 
 export interface Env {
   DB: D1Database;
@@ -64,6 +65,24 @@ export default {
       return json({ ok: true, ...row });
     }
 
+    // Leave-one-out backtest — batch
+    // Safe to re-run: skips draws already scored unless ?force=1
+    if (req.method === "POST" && url.pathname === "/backtest") {
+      const from = url.searchParams.get("from") ?? undefined;
+      const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") ?? 100)));
+      const force = url.searchParams.get("force") === "1";
+      const result = await backtestRange(env.DB, { from, limit, skipExisting: !force });
+      return json({ ok: true, ...result });
+    }
+
+    // Backtest for a single draw — primarily for post-scrape hook but exposed for debugging
+    if (req.method === "POST" && url.pathname === "/backtest/draw") {
+      const date = url.searchParams.get("date");
+      if (!date) return json({ error: "missing ?date=YYYY-MM-DD" }, 400);
+      const inserted = await backtestDraw(env.DB, date);
+      return json({ ok: true, date, inserted });
+    }
+
     return json({ error: "not found" }, 404);
   },
 };
@@ -74,15 +93,26 @@ async function runScheduled(env: Env): Promise<void> {
     // ดึง 2 งวดล่าสุดเพื่อความแน่ใจ (เผื่องวดก่อนหน้ายังขาด)
     const urls = await listSanookArchiveUrls(env.SOURCE_BASE, env.USER_AGENT, 2);
     let added = 0;
+    const touchedDates: string[] = [];
     for (const u of urls) {
       const html = await fetchHtml(u, env.USER_AGENT);
       const parsed = parseSanookDrawPage(html, u);
       if (parsed) {
         const n = await upsertDraw(env.DB, parsed);
         added += n;
+        if (n > 0) touchedDates.push(parsed.drawDate);
       }
     }
     await logScrape(env.DB, "scheduled", "ok", added, null);
+
+    // Post-scrape: backtest any genuinely-new draws so /accuracy stays fresh
+    for (const date of touchedDates) {
+      try {
+        await backtestDraw(env.DB, date);
+      } catch (e) {
+        await logScrape(env.DB, "backtest", "error", 0, `${date}: ${(e as Error).message}`);
+      }
+    }
   } catch (e) {
     await logScrape(env.DB, "scheduled", "error", 0, (e as Error).message);
   }

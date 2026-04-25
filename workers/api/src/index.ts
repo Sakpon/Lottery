@@ -66,6 +66,13 @@ export default {
         return cors(env, await cached(env, ctx, req, () => getPrediction(env, pt, topK)));
       }
 
+      if (path === "/api/accuracy") {
+        const pt = (url.searchParams.get("prize") ?? "last_two") as PrizeType;
+        if (!VALID_PRIZES.includes(pt)) return cors(env, json({ error: "invalid prize type" }, 400));
+        const days = clamp(Number(url.searchParams.get("days") ?? 180), 7, 3650);
+        return cors(env, await cached(env, ctx, req, () => getAccuracy(env, pt, days)));
+      }
+
       return cors(env, json({ error: "not found" }, 404));
     } catch (e) {
       return cors(env, json({ error: (e as Error).message }, 500));
@@ -212,6 +219,92 @@ async function getPrediction(env: Env, prizeType: PrizeType, topK: number): Prom
   };
   await writeCache(env, cacheKey, payload);
   return json(payload);
+}
+
+async function getAccuracy(env: Env, prizeType: PrizeType, days: number): Promise<Response> {
+  const cutoff = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+  const rows = await env.DB.prepare(
+    `SELECT draw_date, model, hit_rank, top_k
+       FROM backtest_results
+      WHERE prize_type = ? AND draw_date >= ?
+      ORDER BY draw_date ASC`,
+  ).bind(prizeType, cutoff).all<{ draw_date: string; model: string; hit_rank: number | null; top_k: number }>();
+
+  const list = rows.results ?? [];
+  const byModel = new Map<string, { draw_date: string; hit_rank: number | null; top_k: number }[]>();
+  for (const r of list) {
+    if (!byModel.has(r.model)) byModel.set(r.model, []);
+    byModel.get(r.model)!.push(r);
+  }
+
+  const space = prizeSpaceSize(prizeType);
+  const models = Array.from(byModel.entries()).map(([model, rs]) => {
+    const total = rs.length;
+    const hits = rs.filter((r) => r.hit_rank != null).length;
+    const topK = rs[0]?.top_k ?? 10;
+    const baseline = topK / space;
+    const hitRate = total > 0 ? hits / total : 0;
+    const meanRank = hits > 0
+      ? rs.filter((r) => r.hit_rank != null).reduce((s, r) => s + (r.hit_rank ?? 0), 0) / hits
+      : null;
+    const pValue = binomialUpperTailPValue(hits, total, baseline);
+    const series = rs.map((r) => ({ date: r.draw_date, hit: r.hit_rank != null ? 1 : 0 }));
+    return { model, total, hits, hitRate, baseline, meanRank, pValue, topK, series };
+  });
+
+  // Sort so ensemble lands first if present
+  models.sort((a, b) => {
+    if (a.model === "ensemble") return -1;
+    if (b.model === "ensemble") return 1;
+    return a.model.localeCompare(b.model);
+  });
+
+  const totalDraws = new Set(list.map((r) => r.draw_date)).size;
+  return json({
+    prizeType,
+    days,
+    space,
+    totalDraws,
+    models,
+    disclaimer: "ความแม่นทางสถิติ — ค่า p-value วัดว่าผลต่างกับ baseline มีนัยสำคัญหรือไม่",
+  });
+}
+
+function prizeSpaceSize(prize: PrizeType): number {
+  switch (prize) {
+    case "first": case "first_near": return 1_000_000;
+    case "front_three": case "last_three": return 1000;
+    case "last_two": return 100;
+  }
+}
+
+/**
+ * Binomial upper-tail probability: P(X >= observed) given n trials and base prob p.
+ * Uses the regularized incomplete beta function via a log-domain summation to
+ * stay stable for large n (a few hundred draws).
+ */
+function binomialUpperTailPValue(observed: number, n: number, p: number): number {
+  if (n <= 0 || observed <= 0) return 1;
+  if (p <= 0) return observed > 0 ? 0 : 1;
+  if (p >= 1) return observed >= n ? 1 : 0;
+  const logP = Math.log(p);
+  const log1mP = Math.log(1 - p);
+  let sum = 0;
+  for (let k = observed; k <= n; k++) {
+    sum += Math.exp(logChoose(n, k) + k * logP + (n - k) * log1mP);
+  }
+  return Math.min(1, sum);
+}
+
+const logFactCache: number[] = [0, 0];
+function logFactorial(n: number): number {
+  for (let i = logFactCache.length; i <= n; i++) {
+    logFactCache[i] = logFactCache[i - 1] + Math.log(i);
+  }
+  return logFactCache[n];
+}
+function logChoose(n: number, k: number): number {
+  return logFactorial(n) - logFactorial(k) - logFactorial(n - k);
 }
 
 // ───────────────────────── helpers ─────────────────────────

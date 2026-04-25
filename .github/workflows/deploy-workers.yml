@@ -45,14 +45,17 @@ jobs:
               echo "::error::D1 create succeeded but could not resolve UUID"
               exit 1
             fi
-            # apply schema ทันทีที่สร้างใหม่
-            sed -i "s/REPLACE_WITH_D1_ID/$id/g" workers/api/wrangler.toml workers/scraper/wrangler.toml
-            npx wrangler d1 execute lottery_th --remote --file=data/schema/schema.sql
           else
             echo "D1 lottery_th already exists: $existing"
             id="$existing"
           fi
           echo "d1_id=$id" >> "$GITHUB_OUTPUT"
+
+      - name: Apply schema (idempotent — CREATE ... IF NOT EXISTS)
+        run: |
+          set -euo pipefail
+          sed -i "s/REPLACE_WITH_D1_ID/${{ steps.d1.outputs.d1_id }}/g" workers/api/wrangler.toml
+          npx wrangler d1 execute lottery_th --remote --file=data/schema/schema.sql
 
   deploy:
     needs: ensure-d1
