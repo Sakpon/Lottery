@@ -3,16 +3,15 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
 # สลากออกประมาณ 16:00–17:00 ICT (UTC+7) ของวันที่ 1 และ 16 ของแต่ละเดือน
-# รัน 3 จังหวะเพื่อรองรับความล่าช้าของ sanook ในการเผยแพร่:
-#   • 17:30 ICT (10:30 UTC) วันที่ 1,16 — จังหวะหลักหลังประกาศผล
-#   • 19:30 ICT (12:30 UTC) วันที่ 1,16 — retry กรณีรอบแรก sanook ยังไม่อัปเดต
-#   • 17:00 ICT (10:00 UTC) วันที่ 2,17 — safety net ถ้าวันก่อนหน้าทั้ง 2 รอบ fail
-# upsertDraw ใช้ INSERT OR IGNORE และ backtest เฉพาะ touchedDates → รอบซ้ำเป็น no-op
+# รัน 2 จังหวะในวันออกผลเพื่อรองรับความล่าช้าของ sanook ในการเผยแพร่:
+#   • 17:30 ICT (10:30 UTC) — จังหวะหลักหลังประกาศผล
+#   • 19:30 ICT (12:30 UTC) — retry กรณีรอบแรก sanook ยังไม่อัปเดต
+# ถ้าทั้งสองรอบ fail ให้ trigger workflow "Backfill lottery history" เพื่อกู้คืน
+# (จำกัด 2 รายการเพื่อให้พอดีกับ account-wide limit 5 cron triggers ของ Free plan)
 [triggers]
 crons = [
   "30 10 1,16 * *",
-  "30 12 1,16 * *",
-  "0 10 2,17 * *"
+  "30 12 1,16 * *"
 ]
 
 [[d1_databases]]
