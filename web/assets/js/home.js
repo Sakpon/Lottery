@@ -63,7 +63,7 @@ function renderRecommendItem(p) {
   li.className = "rank-item";
   li.style.setProperty("--score", (p.score ?? 0).toFixed(2));
   li.innerHTML = `
-    <div style="display:flex;align-items:center;gap:.5rem">
+    <div class="rank-head">
       <span class="rank-badge">${p.rank}</span>
       <span class="rank-score">คะแนน ${((p.score ?? 0) * 100).toFixed(0)}%</span>
     </div>
