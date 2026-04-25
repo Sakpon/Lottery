@@ -7,14 +7,16 @@ const targetEl = document.querySelector('[data-el="target-date"]');
 
 let prize = new URLSearchParams(location.search).get("prize") || "last_two";
 
+function activateTab(t) {
+  tabs.forEach((x) => x.classList.remove("active"));
+  t.classList.add("active");
+  t.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+}
+
 tabs.forEach((t) => {
-  if (t.dataset.prize === prize) {
-    tabs.forEach((x) => x.classList.remove("active"));
-    t.classList.add("active");
-  }
+  if (t.dataset.prize === prize) activateTab(t);
   t.addEventListener("click", () => {
-    tabs.forEach((x) => x.classList.remove("active"));
-    t.classList.add("active");
+    activateTab(t);
     prize = t.dataset.prize;
     load();
   });
@@ -58,7 +60,7 @@ function renderRank(p) {
   li.className = "rank-item";
   li.style.setProperty("--score", p.score.toFixed(2));
   li.innerHTML = `
-    <div style="display:flex;align-items:center;gap:.5rem">
+    <div class="rank-head">
       <span class="rank-badge">${p.rank}</span>
       <span class="rank-score">คะแนน ${(p.score * 100).toFixed(0)}%</span>
     </div>

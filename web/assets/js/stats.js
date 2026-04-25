@@ -10,14 +10,16 @@ const winOut = document.getElementById("window-size-out");
 let prize = new URLSearchParams(location.search).get("prize") || "last_two";
 let windowSize = 60;
 
+function activateTab(t) {
+  tabs.forEach((x) => x.classList.remove("active"));
+  t.classList.add("active");
+  t.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+}
+
 tabs.forEach((t) => {
-  if (t.dataset.prize === prize) {
-    tabs.forEach((x) => x.classList.remove("active"));
-    t.classList.add("active");
-  }
+  if (t.dataset.prize === prize) activateTab(t);
   t.addEventListener("click", () => {
-    tabs.forEach((x) => x.classList.remove("active"));
-    t.classList.add("active");
+    activateTab(t);
     prize = t.dataset.prize;
     load();
   });
