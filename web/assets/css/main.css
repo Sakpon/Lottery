@@ -541,8 +541,8 @@ main { flex: 1; padding-bottom: var(--s-12); }
   gap: var(--s-2);
 }
 /* Wider cells for longer numbers — keeps chip text inside its container */
-.chip-grid[data-digits="3"] { grid-template-columns: repeat(auto-fill, minmax(5.25rem, 1fr)); }
-.chip-grid[data-digits="6"] { grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); }
+.chip-grid[data-digits="3"] { grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr)); }
+.chip-grid[data-digits="6"] { grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); }
 .chip {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: var(--s-3) var(--s-2);
@@ -552,6 +552,8 @@ main { flex: 1; padding-bottom: var(--s-12); }
   min-height: var(--touch);
   min-width: 0;
   overflow: hidden;
+  /* Container queries let chip-num scale to whatever cell width we end up at */
+  container-type: inline-size;
   font-family: var(--font-mono);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -566,10 +568,20 @@ main { flex: 1; padding-bottom: var(--s-12); }
   font-size: var(--fs-xl);
   letter-spacing: 0.06em;
   max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
 }
-/* Down-scale font for longer numbers so they fit the cell width */
-.chip-grid[data-digits="3"] .chip-num { font-size: var(--fs-lg); letter-spacing: 0.05em; }
-.chip-grid[data-digits="6"] .chip-num { font-size: var(--fs-base); letter-spacing: 0.03em; }
+/* Down-scale font for longer numbers AND fluid-fit via container queries
+   so the text always fits the chip regardless of viewport width */
+.chip-grid[data-digits="3"] .chip-num {
+  font-size: clamp(0.85rem, 18cqi, var(--fs-lg));
+  letter-spacing: 0.04em;
+}
+.chip-grid[data-digits="6"] .chip-num {
+  font-size: clamp(0.7rem, 11.5cqi, var(--fs-base));
+  letter-spacing: 0.02em;
+}
 .chip-count { font-size: var(--fs-xs); color: var(--color-text-muted); margin-top: 2px; }
 .skeleton-chip { background: var(--color-surface-2); border-radius: var(--r-md); height: 3.75rem; }
 
