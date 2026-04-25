@@ -37,6 +37,9 @@ async function load() {
   heatEl.innerHTML = "";
   try {
     const s = await api.stats(prize, windowSize);
+    const digits = (s.hot?.[0]?.number || s.cold?.[0] || "").length || 2;
+    hotEl.dataset.digits = String(digits);
+    coldEl.dataset.digits = String(digits);
     hotEl.innerHTML = "";
     (s.hot || []).forEach((h) => {
       const li = document.createElement("li");
