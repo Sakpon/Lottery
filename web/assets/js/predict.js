@@ -72,9 +72,9 @@ function renderRank(p) {
 
 function modelLabel(name) {
   return {
-    frequency: "ความถี่ (Frequency)",
-    gap: "ค้างนาน (Gap)",
-    markov: "Markov",
+    frequency: "ความถี่",
+    gap: "ค้างนาน",
+    markov: "มาร์คอฟ",
     digit_position: "ตามตำแหน่งหลัก",
   }[name] || name;
 }
