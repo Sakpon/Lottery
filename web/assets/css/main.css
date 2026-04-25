@@ -540,13 +540,18 @@ main { flex: 1; padding-bottom: var(--s-12); }
   grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
   gap: var(--s-2);
 }
+/* Wider cells for longer numbers — keeps chip text inside its container */
+.chip-grid[data-digits="3"] { grid-template-columns: repeat(auto-fill, minmax(5.25rem, 1fr)); }
+.chip-grid[data-digits="6"] { grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); }
 .chip {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: var(--s-3);
+  padding: var(--s-3) var(--s-2);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--r-md);
   min-height: var(--touch);
+  min-width: 0;
+  overflow: hidden;
   font-family: var(--font-mono);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -557,7 +562,14 @@ main { flex: 1; padding-bottom: var(--s-12); }
   .chip--hot { background: linear-gradient(180deg, #3A1616, var(--color-surface)); }
   .chip--cold { background: linear-gradient(180deg, #162838, var(--color-surface)); }
 }
-.chip-num { font-size: var(--fs-xl); letter-spacing: 0.06em; }
+.chip-num {
+  font-size: var(--fs-xl);
+  letter-spacing: 0.06em;
+  max-width: 100%;
+}
+/* Down-scale font for longer numbers so they fit the cell width */
+.chip-grid[data-digits="3"] .chip-num { font-size: var(--fs-lg); letter-spacing: 0.05em; }
+.chip-grid[data-digits="6"] .chip-num { font-size: var(--fs-base); letter-spacing: 0.03em; }
 .chip-count { font-size: var(--fs-xs); color: var(--color-text-muted); margin-top: 2px; }
 .skeleton-chip { background: var(--color-surface-2); border-radius: var(--r-md); height: 3.75rem; }
 
