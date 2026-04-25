@@ -41,7 +41,9 @@ export default {
       if (path === "/api/draws") {
         const limit = clamp(Number(url.searchParams.get("limit") ?? 20), 1, 100);
         const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0));
-        return cors(env, await cached(env, ctx, req, () => listDraws(env, limit, offset)));
+        const yearParam = url.searchParams.get("year");
+        const year = yearParam && /^\d{4}$/.test(yearParam) ? yearParam : null;
+        return cors(env, await cached(env, ctx, req, () => listDraws(env, limit, offset, year)));
       }
       const drawDateMatch = path.match(/^\/api\/draws\/(\d{4}-\d{2}-\d{2})$/);
       if (drawDateMatch) {
@@ -93,15 +95,19 @@ async function getLatestDraw(env: Env): Promise<Response> {
   return json(serializeDraw(draw, nums.get(draw.id) ?? []));
 }
 
-async function listDraws(env: Env, limit: number, offset: number): Promise<Response> {
-  const draws = await env.DB.prepare(
-    `SELECT * FROM draws ORDER BY draw_date DESC LIMIT ? OFFSET ?`,
-  ).bind(limit, offset).all<DrawRow>();
+async function listDraws(env: Env, limit: number, offset: number, year: string | null = null): Promise<Response> {
+  const draws = year
+    ? await env.DB.prepare(
+        `SELECT * FROM draws WHERE draw_date >= ? AND draw_date < ? ORDER BY draw_date DESC LIMIT ? OFFSET ?`,
+      ).bind(`${year}-01-01`, `${Number(year) + 1}-01-01`, limit, offset).all<DrawRow>()
+    : await env.DB.prepare(
+        `SELECT * FROM draws ORDER BY draw_date DESC LIMIT ? OFFSET ?`,
+      ).bind(limit, offset).all<DrawRow>();
   const list = draws.results ?? [];
   const nums = await fetchNumbers(env, list.map((d) => d.id));
   return json({
     draws: list.map((d) => serializeDraw(d, nums.get(d.id) ?? [])),
-    limit, offset,
+    limit, offset, year,
   });
 }
 
