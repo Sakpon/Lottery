@@ -149,22 +149,20 @@ export function parseSanookDrawPage(rawHtml: string, sourceUrl: string): ParsedD
   }
 
   // เลขหน้า 3 ตัว
-  const frontBlock = sliceBetween(htmlAfter, "เลขหน้า 3 ตัว", "เลขท้าย 3 ตัว", 4000);
-  if (frontBlock) {
-    const three = Array.from(frontBlock.matchAll(/(?<!\d)(\d{3})(?!\d)/g)).map((m) => m[1]);
-    three.slice(0, 2).forEach((n, i) =>
-      numbers.push({ prizeType: "front_three", number: n, position: i }),
-    );
-  }
+  const frontThree = extractAfterMarker(
+    htmlAfter, "เลขหน้า 3 ตัว", "เลขท้าย 3 ตัว", /(?<!\d)(\d{3})(?!\d)/g, 2,
+  );
+  frontThree.forEach((n, i) =>
+    numbers.push({ prizeType: "front_three", number: n, position: i }),
+  );
 
   // เลขท้าย 3 ตัว
-  const backBlock = sliceBetween(htmlAfter, "เลขท้าย 3 ตัว", "เลขท้าย 2 ตัว", 4000);
-  if (backBlock) {
-    const three = Array.from(backBlock.matchAll(/(?<!\d)(\d{3})(?!\d)/g)).map((m) => m[1]);
-    three.slice(0, 2).forEach((n, i) =>
-      numbers.push({ prizeType: "last_three", number: n, position: i }),
-    );
-  }
+  const lastThree = extractAfterMarker(
+    htmlAfter, "เลขท้าย 3 ตัว", "เลขท้าย 2 ตัว", /(?<!\d)(\d{3})(?!\d)/g, 2,
+  );
+  lastThree.forEach((n, i) =>
+    numbers.push({ prizeType: "last_three", number: n, position: i }),
+  );
 
   // เลขท้าย 2 ตัว
   const lastTwoBlock = sliceBetween(htmlAfter, "เลขท้าย 2 ตัว", "</body", 4000)
@@ -297,4 +295,32 @@ function sliceBetween(s: string, startMarker: string, endMarker: string, maxLen 
   const j = s.indexOf(endMarker, i + startMarker.length);
   const end = j < 0 ? i + maxLen : Math.min(j, i + maxLen);
   return s.slice(i + startMarker.length, end);
+}
+
+/**
+ * Walk every occurrence of `startMarker` and return the first slice that
+ * yields at least one regex match. Use when sanook's page has the marker
+ * label duplicated (e.g. in a TOC or sticky nav before the actual results
+ * card) — the first occurrence's slice may be empty/decorative.
+ */
+function extractAfterMarker(
+  s: string,
+  startMarker: string,
+  endMarker: string,
+  regex: RegExp,
+  count: number,
+  maxLen = 4000,
+): string[] {
+  let cursor = 0;
+  while (cursor < s.length) {
+    const i = s.indexOf(startMarker, cursor);
+    if (i < 0) return [];
+    const j = s.indexOf(endMarker, i + startMarker.length);
+    const end = j < 0 ? i + maxLen : Math.min(j, i + maxLen);
+    const block = s.slice(i + startMarker.length, end);
+    const matches = Array.from(block.matchAll(regex)).map((m) => m[1]);
+    if (matches.length >= 1) return matches.slice(0, count);
+    cursor = i + startMarker.length;
+  }
+  return [];
 }
