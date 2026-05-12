@@ -255,5 +255,49 @@ console.log("case 7: old-date page with latest-results widget at top");
   assert(m.last_two?.[0] === "10", `last_two = 10 (got ${m.last_two?.[0]})`);
 }
 
+console.log("case 8: TOC duplicates section labels above the real result cards");
+{
+  // Reproduces the 2026-05-02 regression: page has a TOC/sidebar that lists
+  // the prize section names back-to-back near the top, so a naive
+  // sliceBetween("เลขท้าย 3 ตัว", "เลขท้าย 2 ตัว") matches an empty TOC slice
+  // and yields no 3-digit numbers. Parser must walk to the next occurrence.
+  const html = `<!DOCTYPE html><html><body>
+    <nav>
+      <ul>
+        <li>รางวัลที่ 1</li>
+        <li>เลขหน้า 3 ตัว</li>
+        <li>เลขท้าย 3 ตัว</li>
+        <li>เลขท้าย 2 ตัว</li>
+      </ul>
+    </nav>
+    <h1>งวดวันที่ 2 พฤษภาคม 2569</h1>
+    <section><h2>รางวัลที่ 1</h2>
+      <div class="lotto__number lotto--black">309612</div>
+    </section>
+    <section><h2>เลขหน้า 3 ตัว</h2>
+      <div>355</div><div>108</div>
+    </section>
+    <section><h2>เลขท้าย 3 ตัว</h2>
+      <div>421</div><div>774</div>
+    </section>
+    <section><h2>เลขท้าย 2 ตัว</h2>
+      <div>16</div>
+    </section>
+  </body></html>`;
+  const p = parseSanookDrawPage(html, "https://news.sanook.com/lotto/check/02052569/");
+  const m = prizeMap(p);
+  assert(p?.drawDate === "2026-05-02", `drawDate = 2026-05-02 (got ${p?.drawDate})`);
+  assert(m.first?.[0] === "309612", `first = 309612 (got ${m.first?.[0]})`);
+  assert(
+    m.front_three?.[0] === "355" && m.front_three?.[1] === "108",
+    `front_three = [355, 108] from result card, not empty TOC (got ${JSON.stringify(m.front_three)})`,
+  );
+  assert(
+    m.last_three?.[0] === "421" && m.last_three?.[1] === "774",
+    `last_three = [421, 774] from result card, not empty TOC (got ${JSON.stringify(m.last_three)})`,
+  );
+  assert(m.last_two?.[0] === "16", `last_two = 16 (got ${m.last_two?.[0]})`);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
