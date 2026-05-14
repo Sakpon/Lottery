@@ -26,6 +26,7 @@ export const api = {
   predict: (prizeType, topK = 10) => request(`/predict/${prizeType}?topK=${topK}`),
   accuracy: (prizeType, days = 180) => request(`/accuracy?prize=${prizeType}&days=${days}`),
   accuracySummary: () => request(`/accuracy/summary`),
+  bias: (prizeType) => request(`/bias?prize=${prizeType}`),
 };
 
 export function formatThaiDate(iso) {

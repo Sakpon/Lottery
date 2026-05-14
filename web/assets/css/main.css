@@ -928,6 +928,7 @@ main { flex: 1; padding-bottom: var(--s-12); }
   stroke: var(--color-text-muted); stroke-width: 1; stroke-dasharray: 3 3;
   opacity: 0.5;
 }
+/* Bias-dashboard bar chart — small histogram of digit frequency 0..9 */
 .bias-spark { height: 80px; }
 .spark-bar { fill: var(--color-primary); opacity: 0.55; }
 .spark-bar--hot { fill: var(--color-hot); opacity: 0.9; }

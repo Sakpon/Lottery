@@ -83,6 +83,12 @@ export default {
         return cors(env, await cached(env, ctx, req, () => getAccuracySummary(env), 60));
       }
 
+      if (path === "/api/bias") {
+        const pt = (url.searchParams.get("prize") ?? "last_two") as PrizeType;
+        if (!VALID_PRIZES.includes(pt)) return cors(env, json({ error: "invalid prize type" }, 400));
+        return cors(env, await cached(env, ctx, req, () => getBias(env, pt)));
+      }
+
       return cors(env, json({ error: "not found" }, 404));
     } catch (e) {
       return cors(env, json({ error: (e as Error).message }, 500));
@@ -397,6 +403,96 @@ function logFactorial(n: number): number {
 }
 function logChoose(n: number, k: number): number {
   return logFactorial(n) - logFactorial(k) - logFactorial(n - k);
+}
+
+// ───────────────────────── bias ─────────────────────────
+// สำหรับแต่ละ "หลัก" (digit position) นับว่าเลข 0..9 ปรากฏกี่ครั้ง แล้วทำ
+// chi-square goodness-of-fit เทียบกับ uniform (คาดหวังเท่ากันทุกหลัก = N/10)
+//
+// Caveat ทางสถิติ: 461 งวด × 6 หลัก = 2766 จุดข้อมูล แม้แต่ chi-square ที่ p<0.05
+// ก็อาจเป็นเพียง sampling variance — multiple testing เป็นปัญหาจริงเมื่อทดสอบ
+// หลายหลักพร้อมกัน เราจึงรายงานทั้ง raw p และ Bonferroni-adjusted threshold
+async function getBias(env: Env, prizeType: PrizeType): Promise<Response> {
+  const rows = await env.DB.prepare(
+    `SELECT n.number, n.position FROM numbers n WHERE n.prize_type = ?`,
+  ).bind(prizeType).all<{ number: string; position: number }>();
+
+  const list = rows.results ?? [];
+  if (!list.length) {
+    return json({ prizeType, totalSamples: 0, digits: 0, positions: [] });
+  }
+
+  const digits = list[0].number.length;
+  // counts[pos][digit] = freq across all draws at that digit-position
+  const counts: number[][] = Array.from({ length: digits }, () => Array(10).fill(0));
+  let total = 0;
+  for (const r of list) {
+    if (r.number.length !== digits) continue;
+    for (let p = 0; p < digits; p++) {
+      const d = Number(r.number[p]);
+      if (!isNaN(d)) counts[p][d]++;
+    }
+    total++;
+  }
+
+  const positions = counts.map((row, pos) => {
+    const n = row.reduce((a, b) => a + b, 0);
+    const expected = n / 10;
+    // chi-square goodness-of-fit, df=9
+    let chiSq = 0;
+    for (let d = 0; d < 10; d++) {
+      const diff = row[d] - expected;
+      chiSq += (diff * diff) / expected;
+    }
+    const pValue = chiSquarePValueDf9(chiSq);
+    return {
+      position: pos,
+      digitCounts: row,
+      n,
+      expectedPerDigit: expected,
+      chiSquare: chiSq,
+      pValue,
+    };
+  });
+
+  // Bonferroni-adjust the alpha=0.05 threshold by number of positions tested
+  const bonferroniAlpha = 0.05 / digits;
+
+  return json({
+    prizeType,
+    digits,
+    totalSamples: total,
+    positions,
+    bonferroniAlpha,
+    df: 9,
+    chiSquareCrit95: 16.92,  // df=9
+    chiSquareCrit99: 21.67,
+  });
+}
+
+// Survival of chi-square distribution with df=9 — approximated via series
+// (df=9 is what we always use here; one-off so no need for a generic gammainc)
+function chiSquarePValueDf9(x: number): number {
+  if (x <= 0) return 1;
+  // For df=9, P(X > x) = e^(-x/2) * Σ_{k=0..4} (x/2)^k / k!  + tail correction
+  // df=9 is odd; closed form uses erfc(√(x/2)) plus polynomial.
+  // We use Wilson–Hilferty approximation: ((x/df)^(1/3) - (1 - 2/(9df))) / √(2/(9df)) ~ N(0,1)
+  const df = 9;
+  const t = Math.pow(x / df, 1 / 3);
+  const mean = 1 - 2 / (9 * df);
+  const sd = Math.sqrt(2 / (9 * df));
+  const z = (t - mean) / sd;
+  // standard normal survival function
+  return 0.5 * erfc(z / Math.SQRT2);
+}
+
+function erfc(x: number): number {
+  // Abramowitz & Stegun 7.1.26 — max error ~1.5e-7
+  const sign = x < 0 ? -1 : 1;
+  const ax = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * ax);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-ax * ax);
+  return sign === 1 ? 1 - y : 1 + y;
 }
 
 // ───────────────────────── helpers ─────────────────────────
