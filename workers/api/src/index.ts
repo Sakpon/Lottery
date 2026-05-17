@@ -70,7 +70,10 @@ export default {
         const pt = (url.searchParams.get("prize") ?? "last_two") as PrizeType;
         if (!VALID_PRIZES.includes(pt)) return cors(env, json({ error: "invalid prize type" }, 400));
         const days = clamp(Number(url.searchParams.get("days") ?? 180), 7, 3650);
-        return cors(env, await cached(env, ctx, req, () => getAccuracy(env, pt, days)));
+        // 60s edge TTL — accuracy data changes after manual "Backtest backfill"
+        // workflow runs; users expect to see new results promptly without waiting
+        // a full hour for the default TTL.
+        return cors(env, await cached(env, ctx, req, () => getAccuracy(env, pt, days), 60));
       }
 
       return cors(env, json({ error: "not found" }, 404));
@@ -391,6 +394,7 @@ async function cached(
   ctx: ExecutionContext,
   req: Request,
   handler: () => Promise<Response>,
+  ttlOverride?: number,
 ): Promise<Response> {
   const cache = caches.default;
   const cacheKey = new Request(req.url, { method: "GET" });
@@ -398,7 +402,8 @@ async function cached(
   if (hit) return hit;
   const res = await handler();
   const fresh = new Response(res.body, res);
-  fresh.headers.set("Cache-Control", `public, max-age=${env.CACHE_TTL ?? 3600}`);
+  const ttl = ttlOverride ?? Number(env.CACHE_TTL ?? 3600);
+  fresh.headers.set("Cache-Control", `public, max-age=${ttl}`);
   ctx.waitUntil(cache.put(cacheKey, fresh.clone()));
   return fresh;
 }
