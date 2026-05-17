@@ -77,6 +77,12 @@ export default {
         return cors(env, await cached(env, ctx, req, () => getAccuracy(env, pt, days), 60));
       }
 
+      if (path === "/api/accuracy/summary") {
+        // Aggregate verdict across all prizes — for the "signal honesty"
+        // banner at the top of /accuracy.html
+        return cors(env, await cached(env, ctx, req, () => getAccuracySummary(env), 60));
+      }
+
       return cors(env, json({ error: "not found" }, 404));
     } catch (e) {
       return cors(env, json({ error: (e as Error).message }, 500));
@@ -280,6 +286,79 @@ async function getAccuracy(env: Env, prizeType: PrizeType, days: number): Promis
     totalDraws,
     models,
     disclaimer: "ความแม่นทางสถิติ — ค่า p-value วัดว่าผลต่างกับ baseline มีนัยสำคัญหรือไม่",
+  });
+}
+
+/**
+ * Cross-prize verdict — for each prize type, find the best-performing model
+ * across all historical backtests and report whether its lift over baseline
+ * is statistically distinguishable from random.
+ *
+ * Used by /accuracy.html's "พบสัญญาณ" banner at the top of the page.
+ */
+async function getAccuracySummary(env: Env): Promise<Response> {
+  const rows = await env.DB.prepare(
+    `SELECT prize_type, model,
+            COUNT(*) AS total,
+            SUM(CASE WHEN hit_rank IS NOT NULL THEN 1 ELSE 0 END) AS hits,
+            MAX(top_k) AS top_k
+       FROM backtest_results
+      GROUP BY prize_type, model`,
+  ).all<{ prize_type: PrizeType; model: string; total: number; hits: number; top_k: number }>();
+
+  const list = rows.results ?? [];
+  const byPrize = new Map<PrizeType, typeof list>();
+  for (const r of list) {
+    if (!byPrize.has(r.prize_type)) byPrize.set(r.prize_type, []);
+    byPrize.get(r.prize_type)!.push(r);
+  }
+
+  // For each prize, pick the model with the lowest p-value (most likely real signal)
+  const prizes = VALID_PRIZES.map((prize) => {
+    const rs = byPrize.get(prize) ?? [];
+    if (!rs.length) {
+      return {
+        prizeType: prize, hasData: false, totalDraws: 0, bestModel: null,
+        bestHitRate: null, baseline: prizeSpaceSize(prize) > 0 ? 10 / prizeSpaceSize(prize) : 0,
+        bestPValue: null, verdict: "no_data" as const,
+      };
+    }
+    const space = prizeSpaceSize(prize);
+    const scored = rs.map((r) => {
+      const baseline = r.top_k / space;
+      const hitRate = r.total > 0 ? r.hits / r.total : 0;
+      const pValue = binomialUpperTailPValue(r.hits, r.total, baseline);
+      return { ...r, baseline, hitRate, pValue };
+    });
+    // Best = lowest p-value (most evidence of beating random)
+    scored.sort((a, b) => a.pValue - b.pValue);
+    const best = scored[0];
+    const verdict: "no_signal" | "weak_signal" | "strong_signal" | "below_baseline" =
+      best.hitRate < best.baseline ? "below_baseline"
+      : best.pValue < 0.01 ? "strong_signal"
+      : best.pValue < 0.05 ? "weak_signal"
+      : "no_signal";
+    return {
+      prizeType: prize,
+      hasData: true,
+      totalDraws: best.total,
+      bestModel: best.model,
+      bestHitRate: best.hitRate,
+      baseline: best.baseline,
+      bestPValue: best.pValue,
+      verdict,
+    };
+  });
+
+  // Overall = "พบสัญญาณ" only if any prize has p < 0.05 with hit_rate > baseline
+  const overall = prizes.some((p) => p.verdict === "strong_signal" || p.verdict === "weak_signal")
+    ? "signal_found"
+    : "no_signal_found";
+
+  return json({
+    overall,
+    prizes,
+    disclaimer: "การออกรางวัลสลากกินแบ่งเป็นการสุ่ม — ไม่มีโมเดลใดสามารถทำนายล่วงหน้าได้แม่นกว่าการสุ่มในระยะยาว ค่าเหล่านี้แสดงเพื่อความโปร่งใส",
   });
 }
 
