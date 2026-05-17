@@ -11,6 +11,7 @@
  */
 
 import { predict } from "../../predictor/src/index";
+import { loadModelParams } from "../../predictor/src/loadParams";
 import type { HistoricalNumber, PrizeType } from "../../predictor/src/types";
 
 export interface Env {
@@ -211,12 +212,21 @@ async function getPrediction(env: Env, prizeType: PrizeType, topK: number): Prom
     });
   }
 
-  const { models, ensemble: combined } = predict(history, prizeType, topK);
+  // Pull tuned params if present (auto-tuner workflow writes these);
+  // predict() falls back to DEFAULT_PARAMS for any missing field.
+  const tunedParams = await loadModelParams(env.DB, prizeType);
+  const tuneInfo = await env.DB.prepare(
+    "SELECT best_score, n_eval_draws, tuned_at FROM model_params WHERE prize_type = ?",
+  ).bind(prizeType).first<{ best_score: number; n_eval_draws: number; tuned_at: string }>();
+  const { models, ensemble: combined } = predict(history, prizeType, topK, tunedParams);
   const payload = {
     prizeType,
     targetDate: computeNextDrawDate(),
     dataPoints: history.length,
     disclaimer: "การทำนายเป็นเพียงการวิเคราะห์ทางสถิติ ไม่รับประกันผล — โปรดเล่นอย่างมีสติ",
+    tuning: tuneInfo
+      ? { score: tuneInfo.best_score, evalDraws: tuneInfo.n_eval_draws, tunedAt: tuneInfo.tuned_at }
+      : null,
     models,
     ensemble: combined,
   };

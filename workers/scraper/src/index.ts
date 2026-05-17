@@ -10,6 +10,8 @@
 import { parseSanookDrawPage, listSanookArchiveUrls } from "./parser";
 import type { ParsedDraw } from "./parser";
 import { backtestDraw, backtestRange } from "./backtest";
+import { tuneAll, tunePrize } from "./tune";
+import type { PrizeType } from "../../predictor/src/types";
 
 export interface Env {
   DB: D1Database;
@@ -81,6 +83,21 @@ export default {
       if (!date) return json({ error: "missing ?date=YYYY-MM-DD" }, 400);
       const inserted = await backtestDraw(env.DB, date);
       return json({ ok: true, date, inserted });
+    }
+
+    // Hyperparameter tuner — grid-search per prize type, write best to model_params.
+    // ?prize=last_two&eval=30  → tune one prize (fits ~10s)
+    // ?eval=30                 → tune all prizes (may take ~30-40s; tight)
+    // The workflow loops per-prize for safety.
+    if (req.method === "POST" && url.pathname === "/tune") {
+      const prize = url.searchParams.get("prize") as PrizeType | null;
+      const evalDraws = Math.min(60, Math.max(10, Number(url.searchParams.get("eval") ?? 30)));
+      if (prize) {
+        const result = await tunePrize(env.DB, prize, evalDraws);
+        return json({ ok: true, prize, result });
+      }
+      const results = await tuneAll(env.DB, evalDraws);
+      return json({ ok: true, results });
     }
 
     return json({ error: "not found" }, 404);

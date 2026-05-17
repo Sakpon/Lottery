@@ -82,3 +82,15 @@ CREATE TABLE IF NOT EXISTS backtest_results (
 );
 
 CREATE INDEX IF NOT EXISTS idx_backtest_prize_date ON backtest_results(prize_type, draw_date DESC);
+
+-- Tuned hyperparameters per prize type — populated by the "Tune models" workflow
+-- (/tune endpoint on scraper). Read by predictor at request time;
+-- missing rows fall back to DEFAULT_PARAMS in workers/predictor/src/index.ts
+CREATE TABLE IF NOT EXISTS model_params (
+  prize_type    TEXT    PRIMARY KEY,
+  params_json   TEXT    NOT NULL,    -- JSON: {frequency:{windowSize,halfLife}, digitPosition:{windowSize}, weights:{...}}
+  best_score    REAL    NOT NULL,    -- average hit@10 that the chosen combo achieved on eval set
+  n_combos      INTEGER NOT NULL,    -- grid size tried
+  n_eval_draws  INTEGER NOT NULL,    -- backtest sample size used to pick
+  tuned_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
