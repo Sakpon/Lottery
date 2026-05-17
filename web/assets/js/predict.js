@@ -4,6 +4,7 @@ const tabs = document.querySelectorAll('[data-el="prize-tabs"] .segment-item');
 const ensembleList = document.querySelector('[data-el="ensemble-list"]');
 const breakdownEl = document.querySelector('[data-el="model-breakdown"]');
 const targetEl = document.querySelector('[data-el="target-date"]');
+const tuningEl = document.querySelector('[data-el="tuning-info"]');
 
 let prize = new URLSearchParams(location.search).get("prize") || "last_two";
 
@@ -28,6 +29,17 @@ async function load() {
   try {
     const res = await api.predict(prize, 10);
     targetEl.textContent = formatThaiDate(res.targetDate);
+
+    if (tuningEl) {
+      if (res.tuning) {
+        const pct = (res.tuning.score * 100).toFixed(1);
+        const when = formatThaiDate(res.tuning.tunedAt.slice(0, 10));
+        tuningEl.textContent = `🎛️ ปรับพารามิเตอร์อัตโนมัติ — hit@10 = ${pct}% (ประเมิน ${res.tuning.evalDraws} งวด, ปรับเมื่อ ${when})`;
+        tuningEl.hidden = false;
+      } else {
+        tuningEl.hidden = true;
+      }
+    }
 
     if (!res.ensemble?.length) {
       ensembleList.innerHTML = `<li class="rank-skeleton">${res.warning || "ไม่มีข้อมูลเพียงพอ"}</li>`;
