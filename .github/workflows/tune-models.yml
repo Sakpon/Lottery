@@ -1,0 +1,113 @@
+name: Tune models
+
+# รัน hyperparameter sweep ต่อ prize type — เขียน best params ลง model_params
+# Predictor (/api/predict) จะอ่านค่าใหม่อัตโนมัติ
+# ต้องมี secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+
+on:
+  workflow_dispatch:
+    inputs:
+      eval_draws:
+        description: "จำนวนงวดที่ใช้ประเมิน (10–60, ค่าแนะนำ 30)"
+        required: true
+        default: "30"
+        type: string
+  # ทำซ้ำทุกเดือน (03:00 UTC ของวันที่ 3 — หลังที่ scraper จับงวด 1 ของเดือนแล้ว)
+  # ให้พารามิเตอร์ "เรียนรู้" จากงวดใหม่ที่เก็บมา
+  schedule:
+    - cron: "0 3 3 * *"
+
+concurrency:
+  group: tune-models
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  tune:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --no-audit --no-fund
+
+      - name: Resolve D1 ID
+        id: d1
+        run: |
+          set -euo pipefail
+          id=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="lottery_th") | .uuid')
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "::error::D1 database 'lottery_th' not found — run Bootstrap first"
+            exit 1
+          fi
+          echo "d1_id=$id" >> "$GITHUB_OUTPUT"
+          sed -i "s/REPLACE_WITH_D1_ID/$id/g" workers/scraper/wrangler.toml
+
+      - name: Apply schema (idempotent — picks up model_params table)
+        run: npx wrangler d1 execute lottery_th --remote --file=data/schema/schema.sql
+
+      - name: Resolve scraper worker URL
+        id: scraper
+        run: |
+          set -euo pipefail
+          sub=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+            | jq -r '.result.subdomain')
+          url="https://lottery-th-scraper.${sub}.workers.dev"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Rotate ADMIN_TOKEN
+        id: token
+        run: |
+          set -euo pipefail
+          TOKEN=$(openssl rand -hex 32)
+          echo "::add-mask::$TOKEN"
+          printf '%s' "$TOKEN" | npx wrangler secret put ADMIN_TOKEN --config workers/scraper/wrangler.toml
+          sleep 8
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Tune each prize type
+        run: |
+          set -euo pipefail
+          TOKEN="${{ steps.token.outputs.token }}"
+          EVAL="${{ inputs.eval_draws || '30' }}"
+
+          {
+            echo "## 🎛️ Tune models — eval=${EVAL} งวด"
+            echo ""
+            echo "| prize | best label | hit@10 | combos |"
+            echo "| ----- | ---------- | ------ | ------ |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for prize in last_two last_three front_three first; do
+            url="${{ steps.scraper.outputs.url }}/tune?prize=${prize}&eval=${EVAL}"
+            response=""
+            for attempt in 1 2 3 4 5; do
+              http_code=$(curl -sS -o /tmp/tune_resp.json -w "%{http_code}" \
+                -X POST "$url" -H "X-Admin-Token: $TOKEN" --max-time 90 || echo "000")
+              if [ "$http_code" = "200" ]; then
+                response=$(cat /tmp/tune_resp.json)
+                break
+              fi
+              if [ "$http_code" = "401" ] && [ "$attempt" -lt 5 ]; then
+                sleep $((attempt * 4))
+                continue
+              fi
+              echo "::error::tune ${prize} failed: HTTP $http_code"
+              cat /tmp/tune_resp.json || true
+              exit 1
+            done
+
+            label=$(echo "$response" | jq -r '.result.best.label // "n/a"')
+            score=$(echo "$response" | jq -r '.result.best.score // 0')
+            combos=$(echo "$response" | jq -r '.result.triedCombos // 0')
+            echo "${prize}: ${label} → ${score}"
+            echo "| ${prize} | ${label} | ${score} | ${combos} |" >> "$GITHUB_STEP_SUMMARY"
+          done
