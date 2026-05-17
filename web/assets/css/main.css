@@ -830,6 +830,51 @@ main { flex: 1; padding-bottom: var(--s-12); }
   font-size: var(--fs-sm);
 }
 
+/* ────────── Signal summary table (accuracy page header) ────────── */
+.signal-summary { margin: var(--s-4) 0; }
+.signal-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: var(--s-3);
+  font-size: var(--fs-sm);
+}
+.signal-table thead th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: var(--s-2) var(--s-3) var(--s-2) 0;
+  border-bottom: 0.5px solid var(--color-divider);
+}
+.signal-table tbody th {
+  text-align: left;
+  font-weight: 600;
+  padding: var(--s-3) var(--s-3) var(--s-3) 0;
+  border-bottom: 0.5px solid var(--color-divider);
+  white-space: nowrap;
+}
+.signal-table tbody td {
+  padding: var(--s-3) var(--s-3) var(--s-3) 0;
+  border-bottom: 0.5px solid var(--color-divider);
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+}
+.signal-table tbody tr:last-child th,
+.signal-table tbody tr:last-child td { border-bottom: 0; }
+.signal-table .accuracy-verdict {
+  padding: 2px var(--s-2);
+  font-size: var(--fs-xs);
+  display: inline-block;
+  margin: 0;
+}
+@media (max-width: 540px) {
+  .signal-table { font-size: var(--fs-xs); }
+  .signal-table thead th:nth-child(3),
+  .signal-table tbody td:nth-child(3) { display: none; }
+}
+
 /* ────────── Stat pair grid (accuracy / bias) ────────── */
 .stat-pair-grid {
   display: grid;

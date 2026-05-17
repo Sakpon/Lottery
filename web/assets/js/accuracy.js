@@ -3,6 +3,7 @@ import { api } from "./api.js";
 const tabs = document.querySelectorAll('[data-el="prize-tabs"] .segment-item');
 const listEl = document.querySelector('[data-el="accuracy-list"]');
 const coverageEl = document.querySelector('[data-el="coverage"]');
+const summaryEl = document.querySelector('[data-el="signal-summary"]');
 const daysSel = document.getElementById("days-filter");
 
 let prize = new URLSearchParams(location.search).get("prize") || "last_two";
@@ -133,4 +134,69 @@ function renderSparkline(series, baseline) {
   `;
 }
 
+const PRIZE_NAMES = {
+  last_two: "เลขท้าย 2 ตัว",
+  last_three: "เลขท้าย 3 ตัว",
+  front_three: "เลขหน้า 3 ตัว",
+  first: "รางวัลที่ 1",
+  first_near: "ข้างเคียงที่ 1",
+};
+
+async function loadSummary() {
+  if (!summaryEl) return;
+  try {
+    const res = await api.accuracySummary();
+    summaryEl.innerHTML = renderSummary(res);
+  } catch (e) {
+    console.error(e);
+    summaryEl.innerHTML = '<div class="model-card"><p class="rank-score">โหลดผลรวมไม่สำเร็จ</p></div>';
+  }
+}
+
+function renderSummary(res) {
+  const overall = res.overall === "signal_found"
+    ? { tone: "good", text: "พบสัญญาณ — มีรางวัลที่โมเดลชนะการสุ่มอย่างมีนัยสำคัญ" }
+    : { tone: "neutral", text: "ไม่พบสัญญาณ — ทุกโมเดลให้ผลใกล้เคียงการสุ่ม (ตามที่คาดสำหรับลอตเตอรี่ที่เป็นธรรม)" };
+
+  const rows = (res.prizes ?? [])
+    .map((p) => {
+      const name = PRIZE_NAMES[p.prizeType] ?? p.prizeType;
+      if (!p.hasData) {
+        return `<tr><th>${name}</th><td colspan="3">ยังไม่มีข้อมูล</td></tr>`;
+      }
+      const hitPct = (p.bestHitRate * 100).toFixed(p.baseline < 0.01 ? 4 : 2);
+      const basePct = (p.baseline * 100).toFixed(p.baseline < 0.01 ? 4 : 2);
+      const pStr = p.bestPValue < 0.0001 ? "< 0.0001" : p.bestPValue.toFixed(3);
+      const verdict = {
+        strong_signal:   { tone: "good", label: "พบสัญญาณชัดเจน" },
+        weak_signal:     { tone: "ok", label: "อาจมีสัญญาณ" },
+        no_signal:       { tone: "neutral", label: "ไม่พบ" },
+        below_baseline:  { tone: "neutral", label: "ต่ำกว่าสุ่ม" },
+      }[p.verdict] ?? { tone: "neutral", label: "—" };
+      return `
+        <tr>
+          <th>${name}</th>
+          <td><span class="accuracy-verdict accuracy-verdict--${verdict.tone}">${verdict.label}</span></td>
+          <td>${hitPct}% / ${basePct}%</td>
+          <td>${pStr}</td>
+        </tr>`;
+    })
+    .join("");
+
+  return `
+    <div class="model-card">
+      <h3>สรุปผล (สัญญาณ vs สุ่ม)</h3>
+      <p class="accuracy-verdict accuracy-verdict--${overall.tone}">${overall.text}</p>
+      <table class="signal-table">
+        <thead>
+          <tr><th>รางวัล</th><th>ผลทดสอบ</th><th>โมเดลที่ดีสุด / สุ่ม</th><th>ค่า p</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p class="rank-reason">${res.disclaimer}</p>
+    </div>
+  `;
+}
+
+loadSummary();
 load();
