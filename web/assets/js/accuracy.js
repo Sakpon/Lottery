@@ -69,6 +69,11 @@ function renderModelCard(m) {
   const lift = m.baseline > 0 ? ((m.hitRate - m.baseline) / m.baseline) * 100 : 0;
   const verdict = verdictFor(m.pValue, m.hits, m.total);
   const meanRank = m.meanRank != null ? m.meanRank.toFixed(1) : "—";
+  // p-value and lift become noisy below ~20 samples — show "—" instead of a
+  // misleading number so the user doesn't read a "win" or "loss" into noise
+  const lowN = m.total < 20;
+  const liftStr = lowN ? "—" : `${lift >= 0 ? "+" : ""}${lift.toFixed(0)}%`;
+  const pStr = lowN ? "—" : (m.pValue < 0.0001 ? "< 0.0001" : m.pValue.toFixed(3));
 
   card.innerHTML = `
     <h3>${MODEL_LABELS[m.model] ?? m.model}</h3>
@@ -77,8 +82,8 @@ function renderModelCard(m) {
       <div><dt>baseline (สุ่ม)</dt><dd>${basePct}%</dd></div>
       <div><dt>ตรง / ทั้งหมด</dt><dd>${m.hits} / ${m.total}</dd></div>
       <div><dt>อันดับเฉลี่ย</dt><dd>${meanRank}</dd></div>
-      <div><dt>lift vs baseline</dt><dd>${lift >= 0 ? "+" : ""}${lift.toFixed(0)}%</dd></div>
-      <div><dt>p-value</dt><dd>${m.pValue < 0.0001 ? "< 0.0001" : m.pValue.toFixed(3)}</dd></div>
+      <div><dt>lift vs baseline</dt><dd>${liftStr}</dd></div>
+      <div><dt>p-value</dt><dd>${pStr}</dd></div>
     </dl>
     <p class="accuracy-verdict accuracy-verdict--${verdict.tone}">${verdict.text}</p>
     ${renderSparkline(m.series, m.baseline)}
@@ -87,7 +92,14 @@ function renderModelCard(m) {
 }
 
 function verdictFor(p, hits, total) {
-  if (total < 20) return { tone: "neutral", text: "ข้อมูลยังน้อยเกินไปที่จะบอกได้" };
+  // Low-N: don't hide the hit rate (the card already shows it). Just label
+  // confidence honestly. p-value is meaningless below ~20 samples.
+  if (total < 5) {
+    return { tone: "neutral", text: `ตัวอย่างน้อยมาก (${total} งวด) — ยังประเมินไม่ได้ ลองเพิ่มช่วงเวลาหรือรัน workflow "Backtest backfill"` };
+  }
+  if (total < 20) {
+    return { tone: "neutral", text: `ตัวอย่างยังน้อย (${total} งวด) — ค่ายังไม่นิ่ง ต้องการอย่างน้อย 20 งวดเพื่อทดสอบนัยสำคัญ` };
+  }
   if (p < 0.01) return { tone: "good", text: `ชนะ baseline อย่างมีนัยสำคัญ (p=${p.toFixed(3)})` };
   if (p < 0.05) return { tone: "ok", text: `ชนะ baseline พอประมาณ (p=${p.toFixed(3)})` };
   if (hits === 0) return { tone: "neutral", text: "ไม่เคยเดาถูกในช่วงนี้" };
