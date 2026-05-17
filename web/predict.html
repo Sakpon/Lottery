@@ -51,8 +51,16 @@
       <button role="tab" class="segment-item" data-prize="first">รางวัลที่ 1</button>
     </div>
 
+    <div class="segment" role="tablist" data-el="model-tabs" aria-label="เลือกโมเดล">
+      <button role="tab" class="segment-item active" data-model="ensemble">รวมโมเดล</button>
+      <button role="tab" class="segment-item" data-model="frequency">ความถี่</button>
+      <button role="tab" class="segment-item" data-model="gap">ค้างนาน</button>
+      <button role="tab" class="segment-item" data-model="markov">มาร์คอฟ</button>
+      <button role="tab" class="segment-item" data-model="digit_position">ตำแหน่งหลัก</button>
+    </div>
+
     <section class="predict-main">
-      <h2>อันดับรวม (Ensemble)</h2>
+      <h2 data-el="ranked-title">อันดับรวมจากทุกโมเดล</h2>
       <ol class="rank-list" data-el="ensemble-list" aria-live="polite"><li class="rank-skeleton">กำลังคำนวณ...</li></ol>
     </section>
 

@@ -1,25 +1,41 @@
 import { api, formatThaiDate, PRIZE_LABELS } from "./api.js";
 
 const tabs = document.querySelectorAll('[data-el="prize-tabs"] .segment-item');
+const modelTabs = document.querySelectorAll('[data-el="model-tabs"] .segment-item');
 const ensembleList = document.querySelector('[data-el="ensemble-list"]');
 const breakdownEl = document.querySelector('[data-el="model-breakdown"]');
 const targetEl = document.querySelector('[data-el="target-date"]');
 const tuningEl = document.querySelector('[data-el="tuning-info"]');
+const titleEl = document.querySelector('[data-el="ranked-title"]');
 
-let prize = new URLSearchParams(location.search).get("prize") || "last_two";
+const params = new URLSearchParams(location.search);
+let prize = params.get("prize") || "last_two";
+let selectedModel = params.get("model") || "ensemble";
 
-function activateTab(t) {
-  tabs.forEach((x) => x.classList.remove("active"));
+// Cache the last API response so switching models doesn't re-fetch
+let lastRes = null;
+
+function activateInGroup(group, t) {
+  group.forEach((x) => x.classList.remove("active"));
   t.classList.add("active");
   t.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
 }
 
 tabs.forEach((t) => {
-  if (t.dataset.prize === prize) activateTab(t);
+  if (t.dataset.prize === prize) activateInGroup(tabs, t);
   t.addEventListener("click", () => {
-    activateTab(t);
+    activateInGroup(tabs, t);
     prize = t.dataset.prize;
     load();
+  });
+});
+
+modelTabs.forEach((t) => {
+  if (t.dataset.model === selectedModel) activateInGroup(modelTabs, t);
+  t.addEventListener("click", () => {
+    activateInGroup(modelTabs, t);
+    selectedModel = t.dataset.model;
+    if (lastRes) renderSelectedModel(lastRes);
   });
 });
 
@@ -28,6 +44,7 @@ async function load() {
   breakdownEl.innerHTML = "";
   try {
     const res = await api.predict(prize, 10);
+    lastRes = res;
     targetEl.textContent = formatThaiDate(res.targetDate);
 
     if (tuningEl) {
@@ -41,13 +58,7 @@ async function load() {
       }
     }
 
-    if (!res.ensemble?.length) {
-      ensembleList.innerHTML = `<li class="rank-skeleton">${res.warning || "ไม่มีข้อมูลเพียงพอ"}</li>`;
-      return;
-    }
-
-    ensembleList.innerHTML = "";
-    res.ensemble.forEach((p) => ensembleList.appendChild(renderRank(p)));
+    renderSelectedModel(res);
 
     breakdownEl.innerHTML = "";
     Object.entries(res.models || {}).forEach(([name, preds]) => {
@@ -67,14 +78,39 @@ async function load() {
   }
 }
 
+function renderSelectedModel(res) {
+  const preds = selectedModel === "ensemble"
+    ? (res.ensemble ?? [])
+    : (res.models?.[selectedModel] ?? []);
+
+  if (titleEl) {
+    titleEl.textContent = selectedModel === "ensemble"
+      ? "อันดับรวมจากทุกโมเดล"
+      : `อันดับจากโมเดล${modelLabel(selectedModel)}`;
+  }
+
+  if (!preds.length) {
+    const reason = res.warning
+      ? res.warning
+      : (selectedModel !== "ensemble"
+          ? `โมเดล${modelLabel(selectedModel)}ไม่รองรับ${PRIZE_LABELS[prize] ?? "รางวัลนี้"} หรือไม่มีข้อมูลพอ`
+          : "ไม่มีข้อมูลเพียงพอ");
+    ensembleList.innerHTML = `<li class="rank-skeleton">${reason}</li>`;
+    return;
+  }
+
+  ensembleList.innerHTML = "";
+  preds.forEach((p) => ensembleList.appendChild(renderRank(p)));
+}
+
 function renderRank(p) {
   const li = document.createElement("li");
   li.className = "rank-item";
-  li.style.setProperty("--score", p.score.toFixed(2));
+  li.style.setProperty("--score", (p.score ?? 0).toFixed(2));
   li.innerHTML = `
     <div class="rank-head">
       <span class="rank-badge">${p.rank}</span>
-      <span class="rank-score">คะแนน ${(p.score * 100).toFixed(0)}%</span>
+      <span class="rank-score">คะแนน ${((p.score ?? 0) * 100).toFixed(0)}%</span>
     </div>
     <p class="rank-number">${p.number}</p>
     ${p.reason ? `<p class="rank-reason">${p.reason}</p>` : ""}
@@ -84,9 +120,10 @@ function renderRank(p) {
 
 function modelLabel(name) {
   return {
-    frequency: "ความถี่ (Frequency)",
-    gap: "ค้างนาน (Gap)",
-    markov: "Markov",
+    ensemble: "รวมโมเดล",
+    frequency: "ความถี่",
+    gap: "ค้างนาน",
+    markov: "มาร์คอฟ",
     digit_position: "ตามตำแหน่งหลัก",
   }[name] || name;
 }
