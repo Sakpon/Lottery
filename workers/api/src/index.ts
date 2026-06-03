@@ -419,10 +419,15 @@ async function getBias(env: Env, prizeType: PrizeType): Promise<Response> {
 
   const list = rows.results ?? [];
   if (!list.length) {
-    return json({ prizeType, totalSamples: 0, digits: 0, positions: [] });
+    // Keep the response shape stable so the client never trips over a missing
+    // field (e.g. bonferroniAlpha) when there is no data yet.
+    return json({ prizeType, totalSamples: 0, digits: 0, positions: [], bonferroniAlpha: 0.05 });
   }
 
-  const digits = list[0].number.length;
+  // Derive digit-width from the most common number length rather than trusting
+  // an arbitrary first row — a single malformed entry must not skew the whole
+  // analysis (or, worse, leave a tested position with zero samples).
+  const digits = mode(list.map((r) => r.number.length));
   // counts[pos][digit] = freq across all draws at that digit-position
   const counts: number[][] = Array.from({ length: digits }, () => Array(10).fill(0));
   let total = 0;
@@ -438,11 +443,15 @@ async function getBias(env: Env, prizeType: PrizeType): Promise<Response> {
   const positions = counts.map((row, pos) => {
     const n = row.reduce((a, b) => a + b, 0);
     const expected = n / 10;
-    // chi-square goodness-of-fit, df=9
+    // chi-square goodness-of-fit, df=9. Guard expected === 0 (a position with no
+    // samples): dividing by it yields NaN, which JSON.stringify emits as null and
+    // crashes the client's `.toFixed`. Treat "no data" as "no evidence of bias".
     let chiSq = 0;
-    for (let d = 0; d < 10; d++) {
-      const diff = row[d] - expected;
-      chiSq += (diff * diff) / expected;
+    if (expected > 0) {
+      for (let d = 0; d < 10; d++) {
+        const diff = row[d] - expected;
+        chiSq += (diff * diff) / expected;
+      }
     }
     const pValue = chiSquarePValueDf9(chiSq);
     return {
@@ -468,6 +477,20 @@ async function getBias(env: Env, prizeType: PrizeType): Promise<Response> {
     chiSquareCrit95: 16.92,  // df=9
     chiSquareCrit99: 21.67,
   });
+}
+
+// Most frequently occurring value — used to pick the dominant digit-width when
+// the data may contain the odd malformed entry.
+function mode(values: number[]): number {
+  const freq = new Map<number, number>();
+  let best = values[0];
+  let bestCount = 0;
+  for (const v of values) {
+    const c = (freq.get(v) ?? 0) + 1;
+    freq.set(v, c);
+    if (c > bestCount) { best = v; bestCount = c; }
+  }
+  return best;
 }
 
 // Survival of chi-square distribution with df=9 — approximated via series
