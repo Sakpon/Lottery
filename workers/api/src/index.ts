@@ -326,7 +326,7 @@ async function getAccuracySummary(env: Env): Promise<Response> {
       return {
         prizeType: prize, hasData: false, totalDraws: 0, bestModel: null,
         bestHitRate: null, baseline: prizeSpaceSize(prize) > 0 ? 10 / prizeSpaceSize(prize) : 0,
-        bestPValue: null, verdict: "no_data" as const,
+        bestPValue: null, verdict: "no_data" as const, models: [],
       };
     }
     const space = prizeSpaceSize(prize);
@@ -336,9 +336,25 @@ async function getAccuracySummary(env: Env): Promise<Response> {
       const pValue = binomialUpperTailPValue(r.hits, r.total, baseline);
       return { ...r, baseline, hitRate, pValue };
     });
-    // Best = lowest p-value (most evidence of beating random)
-    scored.sort((a, b) => a.pValue - b.pValue);
+    // Rank by performance: highest hit rate first. Every model for a given prize
+    // is backtested on the same set of draws, so N is equal across models and the
+    // hit rate is a fair head-to-head; tie-break by the more significant p-value.
+    scored.sort((a, b) => b.hitRate - a.hitRate || a.pValue - b.pValue);
     const best = scored[0];
+    const bestHit = best.hitRate;
+    // A model is "close to best" if it captures most of the leader's edge — within
+    // 10% (relative) of the top hit rate, and still actually doing something.
+    const models = scored.map((m, i) => ({
+      model: m.model,
+      hitRate: m.hitRate,
+      baseline: m.baseline,
+      lift: m.baseline > 0 ? (m.hitRate - m.baseline) / m.baseline : 0,
+      pValue: m.pValue,
+      total: m.total,
+      rank: i + 1,
+      isBest: i === 0,
+      closeToBest: i > 0 && bestHit > 0 && m.hitRate >= 0.9 * bestHit,
+    }));
     const verdict: "no_signal" | "weak_signal" | "strong_signal" | "below_baseline" =
       best.hitRate < best.baseline ? "below_baseline"
       : best.pValue < 0.01 ? "strong_signal"
@@ -353,6 +369,7 @@ async function getAccuracySummary(env: Env): Promise<Response> {
       baseline: best.baseline,
       bestPValue: best.pValue,
       verdict,
+      models,
     };
   });
 
