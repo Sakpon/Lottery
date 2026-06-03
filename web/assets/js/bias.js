@@ -21,12 +21,44 @@ tabs.forEach((t) => {
   });
 });
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// /api/bias is the newest, lowest-traffic route, so it cold-starts (Worker +
+// D1) more often than any other — a single fetch that hits a cold start or a
+// momentary edge blip would otherwise leave the page on a dead-end "โหลดไม่สำเร็จ"
+// with no way back but a full reload. Retry a few times with backoff, and never
+// hang forever on a stalled request.
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("bias request timed out")), ms)),
+  ]);
+}
+
+async function fetchBias(prizeType, attempts = 3) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await withTimeout(api.bias(prizeType), 8000);
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) await sleep(400 * 2 ** i); // 400ms, 800ms
+    }
+  }
+  throw lastErr;
+}
+
 async function load() {
+  // Guard against a stale click queueing a load for a prize the user has since
+  // switched away from — only the latest request gets to paint.
+  const reqPrize = prize;
   gridEl.innerHTML = '<div class="model-card"><p class="rank-score">กำลังโหลด...</p></div>';
   try {
-    const res = await api.bias(prize);
+    const res = await fetchBias(reqPrize);
+    if (reqPrize !== prize) return;
+    const alpha = res.bonferroniAlpha ?? 0.05 / (res.digits || 1);
     coverageEl.textContent = res.totalSamples > 0
-      ? `วิเคราะห์ ${res.totalSamples.toLocaleString("th-TH")} งวด · ${res.digits} หลัก · เกณฑ์ Bonferroni p<${res.bonferroniAlpha.toFixed(4)}`
+      ? `วิเคราะห์ ${res.totalSamples.toLocaleString("th-TH")} งวด · ${res.digits} หลัก · เกณฑ์ Bonferroni p<${alpha.toFixed(4)}`
       : "ยังไม่มีข้อมูล";
 
     if (!res.positions?.length) {
@@ -37,11 +69,18 @@ async function load() {
     gridEl.innerHTML = "";
     const wrapper = document.createElement("div");
     wrapper.className = "model-grid";
-    res.positions.forEach((p) => wrapper.appendChild(renderPosition(p, res.bonferroniAlpha)));
+    res.positions.forEach((p) => wrapper.appendChild(renderPosition(p, alpha)));
     gridEl.appendChild(wrapper);
   } catch (e) {
+    if (reqPrize !== prize) return;
     console.error(e);
-    gridEl.innerHTML = '<div class="model-card"><p class="rank-score">โหลดไม่สำเร็จ</p></div>';
+    coverageEl.textContent = "—";
+    gridEl.innerHTML = `<div class="model-card">
+      <p class="rank-score">โหลดไม่สำเร็จ</p>
+      <p class="rank-reason">เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ชั่วคราว ลองอีกครั้ง</p>
+      <button type="button" class="btn btn-secondary" data-el="retry">ลองใหม่</button>
+    </div>`;
+    gridEl.querySelector('[data-el="retry"]')?.addEventListener("click", load);
   }
 }
 
