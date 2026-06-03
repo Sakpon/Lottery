@@ -871,9 +871,48 @@ main { flex: 1; padding-bottom: var(--s-12); }
 }
 @media (max-width: 540px) {
   .signal-table { font-size: var(--fs-xs); }
-  .signal-table thead th:nth-child(3),
-  .signal-table tbody td:nth-child(3) { display: none; }
+  /* keep the best-model name (col 3) on small screens — drop the hit/baseline
+     column instead; the per-type leaderboard below shows hit rates in full */
+  .signal-table thead th:nth-child(4),
+  .signal-table tbody td:nth-child(4) { display: none; }
 }
+
+/* ────────── Model leaderboard (best model per draw type) ────────── */
+.leaderboard-grid {
+  display: grid; grid-template-columns: 1fr; gap: var(--s-3);
+  margin-top: var(--s-3);
+}
+@media (min-width: 720px) { .leaderboard-grid { grid-template-columns: repeat(2, 1fr); } }
+.leaderboard {
+  background: var(--color-bg-elevated);
+  border-radius: var(--r-lg);
+  padding: var(--s-3) var(--s-4);
+  box-shadow: var(--shadow-sm);
+}
+.lb-title { margin: 0 0 var(--s-2); font-size: var(--fs-md); }
+.lb-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.lb-row {
+  display: flex; align-items: center; gap: var(--s-2);
+  padding: var(--s-2) 0;
+  border-bottom: 0.5px solid var(--color-divider);
+}
+.lb-row:last-child { border-bottom: 0; }
+.lb-rank {
+  flex: 0 0 auto;
+  width: 1.375rem; height: 1.375rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--color-surface-3); color: var(--color-text-muted);
+  font-size: var(--fs-xs); font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.lb-row--best .lb-rank { background: var(--color-primary); color: var(--color-primary-ink); }
+.lb-name { flex: 1 1 auto; font-weight: 500; }
+.lb-hit { font-variant-numeric: tabular-nums; font-weight: 700; }
+.lb-lift { font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.lb-lift--up { color: var(--color-success); }
+.lb-lift--down { color: var(--color-text-muted); }
+.leaderboard .accuracy-verdict { padding: 1px var(--s-2); font-size: var(--fs-xs); margin: 0; }
 
 /* ────────── Stat pair grid (accuracy / bias) ────────── */
 .stat-pair-grid {

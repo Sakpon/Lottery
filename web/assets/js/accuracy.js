@@ -162,7 +162,7 @@ function renderSummary(res) {
     .map((p) => {
       const name = PRIZE_NAMES[p.prizeType] ?? p.prizeType;
       if (!p.hasData) {
-        return `<tr><th>${name}</th><td colspan="3">ยังไม่มีข้อมูล</td></tr>`;
+        return `<tr><th>${name}</th><td colspan="4">ยังไม่มีข้อมูล</td></tr>`;
       }
       const hitPct = (p.bestHitRate * 100).toFixed(p.baseline < 0.01 ? 4 : 2);
       const basePct = (p.baseline * 100).toFixed(p.baseline < 0.01 ? 4 : 2);
@@ -173,14 +173,21 @@ function renderSummary(res) {
         no_signal:       { tone: "neutral", label: "ไม่พบ" },
         below_baseline:  { tone: "neutral", label: "ต่ำกว่าสุ่ม" },
       }[p.verdict] ?? { tone: "neutral", label: "—" };
+      const bestName = p.bestModel ? (MODEL_LABELS[p.bestModel] ?? p.bestModel) : "—";
       return `
         <tr>
           <th>${name}</th>
           <td><span class="accuracy-verdict accuracy-verdict--${verdict.tone}">${verdict.label}</span></td>
+          <td>${bestName}</td>
           <td>${hitPct}% / ${basePct}%</td>
           <td>${pStr}</td>
         </tr>`;
     })
+    .join("");
+
+  const leaderboards = (res.prizes ?? [])
+    .filter((p) => p.hasData && p.models?.length)
+    .map(renderLeaderboard)
     .join("");
 
   return `
@@ -189,13 +196,62 @@ function renderSummary(res) {
       <p class="accuracy-verdict accuracy-verdict--${overall.tone}">${overall.text}</p>
       <table class="signal-table">
         <thead>
-          <tr><th>รางวัล</th><th>ผลทดสอบ</th><th>โมเดลที่ดีสุด / สุ่ม</th><th>ค่า p</th></tr>
+          <tr><th>รางวัล</th><th>ผลทดสอบ</th><th>โมเดลที่ดีสุด</th><th>ดีสุด / สุ่ม</th><th>ค่า p</th></tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
       <p class="rank-reason">${res.disclaimer}</p>
     </div>
+    ${leaderboards ? `
+    <div class="model-card">
+      <h3>โมเดลไหนแม่นสุดในแต่ละประเภท</h3>
+      <p class="rank-reason">จัดอันดับตามอัตราชนะ (hit@10) จาก backtest — ทุกโมเดลทดสอบบนงวดชุดเดียวกัน จึงเทียบกันตรง ๆ ได้</p>
+      <div class="leaderboard-grid">${leaderboards}</div>
+    </div>` : ""}
   `;
+}
+
+// Per-draw-type ranking: list every model best→worst, flag the leader and any
+// model running within striking distance of it.
+function renderLeaderboard(p) {
+  const name = PRIZE_NAMES[p.prizeType] ?? p.prizeType;
+  const lowN = p.totalDraws < 20;
+  // Whether any model actually beats random — only then is "best" a real win.
+  const leaderBeatsRandom = p.models.some((m) => m.hitRate > m.baseline);
+  const items = p.models.map((m) => {
+    const label = MODEL_LABELS[m.model] ?? m.model;
+    const hitPct = (m.hitRate * 100).toFixed(m.baseline < 0.01 ? 4 : 1);
+    const beatsRandom = m.hitRate > m.baseline;
+    // only surface a positive lift — a negative one is already obvious from the
+    // hit rate and just adds "-100%" noise for prizes no model can predict
+    const liftStr = !lowN && m.lift > 0
+      ? `<span class="lb-lift lb-lift--up">+${(m.lift * 100).toFixed(0)}%</span>`
+      : "";
+    const tag = m.isBest && beatsRandom
+      ? `<span class="accuracy-verdict accuracy-verdict--good">🏆 ดีที่สุด</span>`
+      : m.closeToBest && beatsRandom
+        ? `<span class="accuracy-verdict accuracy-verdict--ok">ใกล้เคียง</span>`
+        : "";
+    return `
+      <li class="lb-row${m.isBest && beatsRandom ? " lb-row--best" : ""}">
+        <span class="lb-rank">${m.rank}</span>
+        <span class="lb-name">${label}</span>
+        <span class="lb-hit">${hitPct}%</span>
+        ${liftStr}
+        ${tag}
+      </li>`;
+  }).join("");
+  const note = !leaderBeatsRandom
+    ? `<p class="rank-reason">ยังไม่มีโมเดลใดชนะการสุ่มสำหรับประเภทนี้ — เป็นไปตามคาดสำหรับเลขที่สุ่มล้วน</p>`
+    : lowN
+      ? `<p class="rank-reason">ตัวอย่างยังน้อย (${p.totalDraws} งวด) — อันดับอาจยังไม่นิ่ง</p>`
+      : "";
+  return `
+    <div class="leaderboard">
+      <h4 class="lb-title">${name}</h4>
+      <ol class="lb-list">${items}</ol>
+      ${note}
+    </div>`;
 }
 
 loadSummary();
