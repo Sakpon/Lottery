@@ -1,0 +1,128 @@
+name: Backtest backfill
+
+# วน /backtest จนงวดในประวัติทั้งหมดถูก backtest แล้ว
+# ใช้กับหน้า /accuracy เพื่อมีตัวอย่างพอจะคำนวณ hit rate / p-value ได้นิ่งขึ้น
+# ต้องมี secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch_limit:
+        description: "จำนวนงวดต่อ batch (max 200)"
+        required: true
+        default: "200"
+        type: string
+      force:
+        description: "ทดสอบทับงวดที่ทำไว้แล้ว (ใช้หลังแก้โมเดล)"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: backtest-backfill
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --no-audit --no-fund
+
+      - name: Resolve D1 ID
+        id: d1
+        run: |
+          set -euo pipefail
+          id=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="lottery_th") | .uuid')
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "::error::D1 database 'lottery_th' not found — run Bootstrap first"
+            exit 1
+          fi
+          echo "d1_id=$id" >> "$GITHUB_OUTPUT"
+          sed -i "s/REPLACE_WITH_D1_ID/$id/g" workers/scraper/wrangler.toml
+
+      - name: Resolve scraper worker URL
+        id: scraper
+        run: |
+          set -euo pipefail
+          sub=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+            | jq -r '.result.subdomain')
+          url="https://lottery-th-scraper.${sub}.workers.dev"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Scraper URL: $url"
+
+      - name: Rotate ADMIN_TOKEN
+        id: token
+        run: |
+          set -euo pipefail
+          TOKEN=$(openssl rand -hex 32)
+          echo "::add-mask::$TOKEN"
+          printf '%s' "$TOKEN" | npx wrangler secret put ADMIN_TOKEN --config workers/scraper/wrangler.toml
+          sleep 8  # secret propagation
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Loop /backtest until processed=0
+        id: loop
+        run: |
+          set -euo pipefail
+          TOKEN="${{ steps.token.outputs.token }}"
+          URL="${{ steps.scraper.outputs.url }}/backtest?limit=${{ inputs.batch_limit }}"
+          if [ "${{ inputs.force }}" = "true" ]; then URL="${URL}&force=1"; fi
+
+          total_processed=0
+          total_inserted=0
+          rounds=0
+          while :; do
+            rounds=$((rounds + 1))
+            if [ "$rounds" -gt 50 ]; then
+              echo "::warning::reached 50 rounds — bailing to avoid infinite loop"
+              break
+            fi
+            # Retry on 401 (secret propagation race)
+            response=""
+            for attempt in 1 2 3 4 5; do
+              http_code=$(curl -sS -o /tmp/bt_resp.json -w "%{http_code}" \
+                -X POST "$URL" -H "X-Admin-Token: $TOKEN" --max-time 600 || echo "000")
+              if [ "$http_code" = "200" ]; then
+                response=$(cat /tmp/bt_resp.json)
+                break
+              fi
+              if [ "$http_code" = "401" ] && [ "$attempt" -lt 5 ]; then
+                sleep $((attempt * 4))
+                continue
+              fi
+              echo "::error::backtest call failed: HTTP $http_code"
+              cat /tmp/bt_resp.json || true
+              exit 1
+            done
+
+            processed=$(echo "$response" | jq -r '.processed // 0')
+            inserted=$(echo "$response" | jq -r '.inserted // 0')
+            total_processed=$((total_processed + processed))
+            total_inserted=$((total_inserted + inserted))
+            echo "round $rounds: processed=$processed inserted=$inserted"
+
+            if [ "$processed" -eq 0 ]; then
+              echo "Done — no more draws to backtest"
+              break
+            fi
+          done
+
+          {
+            echo "## 🧪 Backtest backfill เสร็จสิ้น"
+            echo ""
+            echo "- จำนวนงวดที่ประมวลผล: **$total_processed**"
+            echo "- จำนวน rows ที่เพิ่มลง backtest_results: **$total_inserted**"
+            echo "- รอบที่รัน: $rounds"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -14,18 +14,15 @@ async function loadPage(reset = false) {
     listEl.innerHTML = '<li class="draw-skeleton">กำลังโหลด...</li>';
   }
   try {
-    const { draws } = await api.list(PAGE, offset);
-    const filtered = currentYear
-      ? draws.filter((d) => d.date.startsWith(currentYear))
-      : draws;
+    const { draws } = await api.list(PAGE, offset, currentYear);
 
     if (reset) listEl.innerHTML = "";
-    if (filtered.length === 0 && offset === 0) {
+    if (draws.length === 0 && offset === 0) {
       listEl.innerHTML = '<li class="draw-skeleton">ยังไม่มีข้อมูล</li>';
       moreBtn.hidden = true;
       return;
     }
-    filtered.forEach((d) => listEl.appendChild(renderCard(d)));
+    draws.forEach((d) => listEl.appendChild(renderCard(d)));
     offset += PAGE;
     moreBtn.hidden = draws.length < PAGE;
   } catch (e) {

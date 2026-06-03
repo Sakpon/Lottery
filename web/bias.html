@@ -4,24 +4,24 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#8B1538">
-  <title>เลขแนะนำ — หวยสถิติ</title>
-  <meta name="description" content="เลขแนะนำจากโมเดลสถิติหลายแบบ พร้อมเปรียบเทียบกับการสุ่มอย่างโปร่งใส">
+  <title>ทดสอบความเอนเอียง — หวยสถิติ</title>
+  <meta name="description" content="ทดสอบทางสถิติ (chi-square) ว่าเครื่องออกรางวัลเที่ยงตรงหรือมีความเอนเอียง">
 
   <!-- Open Graph / social share thumbnail -->
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="หวยสถิติ">
   <meta property="og:locale" content="th_TH">
-  <meta property="og:title" content="เลขแนะนำ — หวยสถิติ">
-  <meta property="og:description" content="เลขแนะนำจากโมเดลสถิติหลายแบบ พร้อมเปรียบเทียบกับการสุ่มอย่างโปร่งใส">
-  <meta property="og:url" content="https://thlottery.win/predict.html">
+  <meta property="og:title" content="ทดสอบความเอนเอียง — หวยสถิติ">
+  <meta property="og:description" content="ทดสอบทางสถิติ (chi-square) ว่าเครื่องออกรางวัลเที่ยงตรงหรือมีความเอนเอียง">
+  <meta property="og:url" content="https://thlottery.win/bias.html">
   <meta property="og:image" content="https://thlottery.win/assets/img/og-image.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:alt" content="หวยสถิติ — วิเคราะห์และทำนายหวยไทยด้วยสถิติย้อนหลัง 20 ปี">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="เลขแนะนำ — หวยสถิติ">
-  <meta name="twitter:description" content="เลขแนะนำจากโมเดลสถิติหลายแบบ พร้อมเปรียบเทียบกับการสุ่มอย่างโปร่งใส">
+  <meta name="twitter:title" content="ทดสอบความเอนเอียง — หวยสถิติ">
+  <meta name="twitter:description" content="ทดสอบทางสถิติ (chi-square) ว่าเครื่องออกรางวัลเที่ยงตรงหรือมีความเอนเอียง">
   <meta name="twitter:image" content="https://thlottery.win/assets/img/og-image.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -44,23 +44,27 @@
         <a href="/" class="nav-link">หน้าแรก</a>
         <a href="/history.html" class="nav-link">ผลย้อนหลัง</a>
         <a href="/stats.html" class="nav-link">สถิติ</a>
-        <a href="/predict.html" class="nav-link active">ทำนาย</a>
+        <a href="/predict.html" class="nav-link">ทำนาย</a>
         <a href="/accuracy.html" class="nav-link">ความแม่น</a>
-        <a href="/bias.html" class="nav-link">ทดสอบลูกบอล</a>
+        <a href="/bias.html" class="nav-link active">ทดสอบลูกบอล</a>
       </nav>
     </div>
   </header>
 
   <main id="main" class="container">
     <section class="page-head">
-      <h1>เลขแนะนำ (Ensemble)</h1>
-      <p class="lede">เลขที่มีโอกาสออกสูงสุดตามสถิติ งวดวันที่ <strong data-el="target-date">—</strong></p>
-      <p class="meta-label" data-el="tuning-info" hidden>—</p>
+      <h1>ทดสอบความเอนเอียงของลูกบอล</h1>
+      <p class="lede">
+        ทดสอบทางสถิติว่าเลข 0–9 ของแต่ละหลักออกบ่อยเท่ากันหรือไม่
+        ถ้าเครื่องสุ่มเที่ยงตรง ทุกหลักทุกเลขควรมีจำนวนใกล้เคียงกัน
+      </p>
     </section>
 
     <div class="callout callout-warn">
-      <strong>เตือนความจริง:</strong> การออกรางวัลเป็นการสุ่ม
-      ตัวเลขด้านล่างคือผลการวิเคราะห์ทางสถิติเท่านั้น ไม่รับประกันว่าจะออก
+      <strong>วิธีอ่าน:</strong> ใช้การทดสอบ chi-square (df=9) เทียบจำนวนครั้งที่
+      เลข 0–9 ออกในแต่ละหลัก กับการสุ่มแบบ uniform
+      ค่า <em>p</em> ต่ำมาก (เช่น &lt; 0.001) คือสัญญาณว่าหลักนั้น
+      <strong>อาจมีความเอนเอียง</strong> ค่า <em>p</em> ใกล้ 0.5 คือเที่ยงตรงตามคาด
     </div>
 
     <div class="segment" role="tablist" data-el="prize-tabs">
@@ -70,27 +74,17 @@
       <button role="tab" class="segment-item" data-prize="first">รางวัลที่ 1</button>
     </div>
 
-    <div class="segment" role="tablist" data-el="model-tabs" aria-label="เลือกโมเดล">
-      <button role="tab" class="segment-item active" data-model="ensemble">รวมโมเดล</button>
-      <button role="tab" class="segment-item" data-model="frequency">ความถี่</button>
-      <button role="tab" class="segment-item" data-model="gap">ค้างนาน</button>
-      <button role="tab" class="segment-item" data-model="markov">มาร์คอฟ</button>
-      <button role="tab" class="segment-item" data-model="digit_position">ตำแหน่งหลัก</button>
-    </div>
+    <p class="meta-label" data-el="coverage">—</p>
 
-    <section class="predict-main">
-      <h2 data-el="ranked-title">อันดับรวมจากทุกโมเดล</h2>
-      <ol class="rank-list" data-el="ensemble-list" aria-live="polite"><li class="rank-skeleton">กำลังคำนวณ...</li></ol>
-    </section>
-
-    <section class="predict-breakdown">
-      <h2>รายละเอียดแต่ละโมเดล</h2>
-      <div class="model-grid" data-el="model-breakdown"></div>
+    <section data-el="bias-grid" aria-live="polite">
+      <div class="model-card"><p class="rank-score">กำลังโหลด...</p></div>
     </section>
 
     <section class="disclaimer">
-      <p><strong>ข้อมูลโปร่งใส:</strong> เราใช้ 4 โมเดล — Frequency, Gap, Markov, Digit-position
-      และรวมผลแบบถ่วงน้ำหนัก สามารถปรับพารามิเตอร์หรือศึกษาโค้ดได้ที่ GitHub</p>
+      <p><strong>หมายเหตุ:</strong> เพราะมีงวดในประวัติเพียงประมาณ 461 งวด การทดสอบนี้
+      ตรวจจับ <em>ความเอนเอียงเล็ก ๆ</em> (~1–2%) ไม่ได้
+      ต้องมีหลักหมื่นงวดถึงจะมั่นใจ การที่ผลออกมา "ไม่พบความเอนเอียง"
+      ไม่ได้รับประกันว่าเครื่องเที่ยงตรง 100% — เป็นเพียงไม่มีหลักฐานทางสถิติว่าเอนเอียง</p>
     </section>
   </main>
 
@@ -102,7 +96,7 @@
 
   <script src="/assets/js/config.js"></script>
   <script type="module" src="/assets/js/api.js"></script>
-  <script type="module" src="/assets/js/predict.js?v=20260603"></script>
+  <script type="module" src="/assets/js/bias.js?v=20260603"></script>
   <script type="module" src="/assets/js/nav.js?v=20260603"></script>
 </body>
 </html>
