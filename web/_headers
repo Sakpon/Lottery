@@ -5,10 +5,18 @@
   Permissions-Policy: geolocation=(), microphone=(), camera=()
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.workers.dev; frame-ancestors 'none'
 
-/assets/*
-  Cache-Control: public, max-age=31536000, immutable
+# Asset filenames are NOT content-hashed, so code must never be cached
+# "immutable" — a returning browser would otherwise keep stale JS/CSS for the
+# full max-age even after a deploy. Code revalidates (cheap ETag 304s); images
+# (rarely changed) get a modest 1-day cache. Bump the ?v= query on <script>/<link>
+# refs to force-evict anything previously cached as immutable.
+/assets/img/*
+  Cache-Control: public, max-age=86400
 
-/assets/js/config.js
+/assets/css/*
+  Cache-Control: public, max-age=60, must-revalidate
+
+/assets/js/*
   Cache-Control: public, max-age=60, must-revalidate
 
 /manifest.webmanifest
