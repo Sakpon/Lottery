@@ -122,7 +122,6 @@ body {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  padding-bottom: env(safe-area-inset-bottom);
   overflow-wrap: break-word;
   letter-spacing: -0.01em;
 }
@@ -1005,11 +1004,12 @@ main { flex: 1; padding-bottom: var(--s-12); }
 /* ────────── Footer ────────── */
 .app-footer {
   margin-top: auto;
-  padding: var(--s-6) 0 var(--s-8);
+  padding: var(--s-6) 0 calc(var(--s-8) + env(safe-area-inset-bottom));
   color: var(--color-text-muted);
   font-size: var(--fs-sm);
   text-align: center;
-  border-top: 0.5px solid var(--color-divider);
+  background: var(--color-bg-elevated);
+  border-top: 0.5px solid var(--color-border);
 }
 .footer-note {
   font-size: var(--fs-xs);
