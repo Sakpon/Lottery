@@ -72,6 +72,7 @@
   --dur:  220ms;
   --dur-fast: 140ms;
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --spring: cubic-bezier(0.68, -0.55, 0.27, 1.55); /* slight overshoot */
 
   /* Layout */
   --container: 64rem;
@@ -255,19 +256,24 @@ main { flex: 1; padding-bottom: var(--s-12); }
 .nav-toggle {
   background: transparent; border: 0;
   width: var(--touch); height: var(--touch);
-  display: inline-grid; place-items: center; gap: 4px;
+  display: inline-grid; place-items: center; gap: 5px;
   border-radius: var(--r-md);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
-.nav-toggle:active { background: var(--color-surface-3); }
+/* press feedback: brief tinted highlight + slight squash */
+.nav-toggle:active { background: var(--color-surface-3); transform: scale(0.9); }
+/* faint persistent tint while open, so the toggled state reads clearly */
+.nav-toggle[aria-expanded="true"] { background: var(--color-surface-3); }
 .nav-toggle span {
-  display: block; width: 22px; height: 2px;
+  display: block; width: 21px; height: 2px;
   background: var(--color-text);
-  border-radius: 1px;
-  transition: transform var(--dur) var(--ease), opacity var(--dur) var(--ease);
+  border-radius: 999px;
+  transition: transform var(--dur) var(--spring), opacity var(--dur-fast) var(--ease);
 }
-.nav-toggle[aria-expanded="true"] span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
-.nav-toggle[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
-.nav-toggle[aria-expanded="true"] span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+.nav-toggle[aria-expanded="true"] span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.nav-toggle[aria-expanded="true"] span:nth-child(2) { opacity: 0; transform: scaleX(0.3); }
+.nav-toggle[aria-expanded="true"] span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
 
 @media (min-width: 720px) {
   .nav-toggle { display: none; }
@@ -1030,5 +1036,5 @@ main { flex: 1; padding-bottom: var(--s-12); }
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-  .btn:active, .prize-card:active, .feature-card:active, .rank-item:active { transform: none; }
+  .btn:active, .prize-card:active, .feature-card:active, .rank-item:active, .nav-toggle:active { transform: none; }
 }
