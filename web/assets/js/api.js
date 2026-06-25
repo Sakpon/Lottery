@@ -16,10 +16,17 @@ async function request(path) {
 export const api = {
   meta: () => request("/meta"),
   latest: () => request("/draws/latest"),
-  list: (limit = 20, offset = 0) => request(`/draws?limit=${limit}&offset=${offset}`),
+  list: (limit = 20, offset = 0, year = "") => {
+    const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (year) q.set("year", String(year));
+    return request(`/draws?${q.toString()}`);
+  },
   draw: (isoDate) => request(`/draws/${isoDate}`),
   stats: (prizeType, windowSize = 60) => request(`/stats/${prizeType}?window=${windowSize}`),
   predict: (prizeType, topK = 10) => request(`/predict/${prizeType}?topK=${topK}`),
+  accuracy: (prizeType, days = 180) => request(`/accuracy?prize=${prizeType}&days=${days}`),
+  accuracySummary: () => request(`/accuracy/summary`),
+  bias: (prizeType) => request(`/bias?prize=${prizeType}`),
 };
 
 export function formatThaiDate(iso) {

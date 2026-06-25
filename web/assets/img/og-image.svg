@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8B1538"/>
+      <stop offset="1" stop-color="#5E0D24"/>
+    </linearGradient>
+    <linearGradient id="ball" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E6B968"/>
+      <stop offset="1" stop-color="#C68A35"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#D4A04E"/>
+      <stop offset="1" stop-color="#E6B968"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <!-- faint decorative lottery balls -->
+  <circle cx="1080" cy="120" r="150" fill="#FFFFFF" opacity="0.05"/>
+  <circle cx="980" cy="560" r="90" fill="#FFFFFF" opacity="0.05"/>
+  <circle cx="640" cy="40" r="60" fill="#FFFFFF" opacity="0.04"/>
+
+  <!-- brand "8" ball -->
+  <circle cx="300" cy="300" r="150" fill="url(#ball)"/>
+  <circle cx="300" cy="300" r="150" fill="none" stroke="#FDF6E3" stroke-opacity="0.25" stroke-width="4"/>
+  <text x="300" y="372" font-family="Noto Sans Thai, sans-serif" font-size="200" font-weight="700"
+        fill="#7A1230" text-anchor="middle">8</text>
+
+  <!-- wordmark -->
+  <text x="500" y="300" font-family="Noto Sans Thai, sans-serif" font-size="118" font-weight="700"
+        fill="#FDF6E3">หวยสถิติ</text>
+  <rect x="504" y="338" width="150" height="8" rx="4" fill="url(#accent)"/>
+
+  <!-- tagline -->
+  <text x="500" y="410" font-family="Noto Sans Thai, sans-serif" font-size="42" font-weight="400"
+        fill="#FDF6E3" fill-opacity="0.9">วิเคราะห์และทำนายหวยไทย</text>
+  <text x="500" y="468" font-family="Noto Sans Thai, sans-serif" font-size="42" font-weight="400"
+        fill="#FDF6E3" fill-opacity="0.9">ด้วยสถิติย้อนหลัง 20 ปี</text>
+
+  <!-- footer chips -->
+  <text x="500" y="548" font-family="Noto Sans Thai, sans-serif" font-size="30" font-weight="400"
+        fill="#E6B968">ผลย้อนหลัง · สถิติ · ทำนาย · ความแม่น</text>
+</svg>

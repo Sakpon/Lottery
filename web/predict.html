@@ -5,10 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#8B1538">
   <title>เลขแนะนำ — หวยสถิติ</title>
+  <meta name="description" content="เลขแนะนำจากโมเดลสถิติหลายแบบ พร้อมเปรียบเทียบกับการสุ่มอย่างโปร่งใส">
+
+  <!-- Open Graph / social share thumbnail -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="หวยสถิติ">
+  <meta property="og:locale" content="th_TH">
+  <meta property="og:title" content="เลขแนะนำ — หวยสถิติ">
+  <meta property="og:description" content="เลขแนะนำจากโมเดลสถิติหลายแบบ พร้อมเปรียบเทียบกับการสุ่มอย่างโปร่งใส">
+  <meta property="og:url" content="https://thlottery.win/predict.html">
+  <meta property="og:image" content="https://thlottery.win/assets/img/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:alt" content="หวยสถิติ — วิเคราะห์และทำนายหวยไทยด้วยสถิติย้อนหลัง 20 ปี">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="เลขแนะนำ — หวยสถิติ">
+  <meta name="twitter:description" content="เลขแนะนำจากโมเดลสถิติหลายแบบ พร้อมเปรียบเทียบกับการสุ่มอย่างโปร่งใส">
+  <meta name="twitter:image" content="https://thlottery.win/assets/img/og-image.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/css/main.css">
+  <link rel="stylesheet" href="/assets/css/main.css?v=20260625">
 </head>
 <body>
   <a class="skip-link" href="#main">ข้ามไปเนื้อหา</a>
@@ -27,6 +45,7 @@
         <a href="/history.html" class="nav-link">ผลย้อนหลัง</a>
         <a href="/stats.html" class="nav-link">สถิติ</a>
         <a href="/predict.html" class="nav-link active">ทำนาย</a>
+        <a href="/accuracy.html" class="nav-link">ความแม่น</a>
       </nav>
     </div>
   </header>
@@ -35,6 +54,7 @@
     <section class="page-head">
       <h1>เลขแนะนำ (Ensemble)</h1>
       <p class="lede">เลขที่มีโอกาสออกสูงสุดตามสถิติ งวดวันที่ <strong data-el="target-date">—</strong></p>
+      <p class="meta-label" data-el="tuning-info" hidden>—</p>
     </section>
 
     <div class="callout callout-warn">
@@ -46,10 +66,19 @@
       <button role="tab" class="segment-item active" data-prize="last_two">เลขท้าย 2 ตัว</button>
       <button role="tab" class="segment-item" data-prize="last_three">เลขท้าย 3 ตัว</button>
       <button role="tab" class="segment-item" data-prize="front_three">เลขหน้า 3 ตัว</button>
+      <button role="tab" class="segment-item" data-prize="first">รางวัลที่ 1</button>
+    </div>
+
+    <div class="segment" role="tablist" data-el="model-tabs" aria-label="เลือกโมเดล">
+      <button role="tab" class="segment-item active" data-model="ensemble">รวมโมเดล</button>
+      <button role="tab" class="segment-item" data-model="frequency">ความถี่</button>
+      <button role="tab" class="segment-item" data-model="gap">ค้างนาน</button>
+      <button role="tab" class="segment-item" data-model="markov">มาร์คอฟ</button>
+      <button role="tab" class="segment-item" data-model="digit_position">ตำแหน่งหลัก</button>
     </div>
 
     <section class="predict-main">
-      <h2>อันดับรวม (Ensemble)</h2>
+      <h2 data-el="ranked-title">อันดับรวมจากทุกโมเดล</h2>
       <ol class="rank-list" data-el="ensemble-list" aria-live="polite"><li class="rank-skeleton">กำลังคำนวณ...</li></ol>
     </section>
 
@@ -72,7 +101,7 @@
 
   <script src="/assets/js/config.js"></script>
   <script type="module" src="/assets/js/api.js"></script>
-  <script type="module" src="/assets/js/predict.js"></script>
-  <script type="module" src="/assets/js/nav.js"></script>
+  <script type="module" src="/assets/js/predict.js?v=20260603"></script>
+  <script type="module" src="/assets/js/nav.js?v=20260603"></script>
 </body>
 </html>

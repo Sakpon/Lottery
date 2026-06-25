@@ -64,3 +64,33 @@ CREATE TABLE IF NOT EXISTS scrape_log (
   draws_added INTEGER NOT NULL DEFAULT 0,
   message     TEXT
 );
+
+-- ผลการ backtest — สำหรับแต่ละ (งวด × prize × ตำแหน่ง × โมเดล) บันทึกว่าเลขจริงที่ออก
+-- อยู่อันดับเท่าไหร่ใน top-K ของโมเดลนั้น โดยใช้ประวัติก่อนงวดนั้นเท่านั้น
+-- (leave-one-out). ใช้ในหน้า /accuracy เพื่อดูว่าโมเดลชนะ baseline (สุ่ม) หรือไม่
+CREATE TABLE IF NOT EXISTS backtest_results (
+  draw_date     TEXT    NOT NULL,              -- งวดที่ถูกทำนาย (ISO)
+  prize_type    TEXT    NOT NULL,              -- 'first' | 'front_three' | ...
+  position      INTEGER NOT NULL DEFAULT 0,    -- 0, 1 สำหรับรางวัลที่มีหลายเลข
+  model         TEXT    NOT NULL,              -- 'frequency'|'gap'|'markov'|'digit_position'|'ensemble'
+  actual_number TEXT    NOT NULL,
+  top_k         INTEGER NOT NULL,
+  hit_rank      INTEGER,                       -- 1..top_k ถ้าเลขจริงอยู่ใน top-K, NULL ถ้าไม่อยู่
+  actual_score  REAL,                          -- คะแนนที่โมเดลให้กับเลขจริง (0 ถ้าไม่อยู่ใน list)
+  created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (draw_date, prize_type, position, model)
+);
+
+CREATE INDEX IF NOT EXISTS idx_backtest_prize_date ON backtest_results(prize_type, draw_date DESC);
+
+-- Tuned hyperparameters per prize type — populated by the "Tune models" workflow
+-- (/tune endpoint on scraper). Read by predictor at request time;
+-- missing rows fall back to DEFAULT_PARAMS in workers/predictor/src/index.ts
+CREATE TABLE IF NOT EXISTS model_params (
+  prize_type    TEXT    PRIMARY KEY,
+  params_json   TEXT    NOT NULL,    -- JSON: {frequency:{windowSize,halfLife}, digitPosition:{windowSize}, weights:{...}}
+  best_score    REAL    NOT NULL,    -- average hit@10 that the chosen combo achieved on eval set
+  n_combos      INTEGER NOT NULL,    -- grid size tried
+  n_eval_draws  INTEGER NOT NULL,    -- backtest sample size used to pick
+  tuned_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);

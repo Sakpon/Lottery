@@ -1,0 +1,45 @@
+name: Purge prediction cache
+
+# ลบแถวใน stats_cache ทั้งหมด เพื่อให้ /api/stats และ /api/predict ต้องคำนวณใหม่
+# ใช้เมื่อ: deploy parser/predictor ใหม่, import ข้อมูลใหม่, หรือ tune รุ่นโมเดล
+# ไม่ต้องใช้ ADMIN_TOKEN เพราะทำผ่าน wrangler d1 execute โดยตรง
+# ต้องมี secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: purge-cache
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --no-audit --no-fund
+
+      - name: Purge stats_cache
+        run: |
+          set -euo pipefail
+          before=$(npx wrangler d1 execute lottery_th --remote --command "SELECT COUNT(*) AS c FROM stats_cache;" --json | jq -r '.[0].results[0].c')
+          npx wrangler d1 execute lottery_th --remote --command "DELETE FROM stats_cache;"
+          after=$(npx wrangler d1 execute lottery_th --remote --command "SELECT COUNT(*) AS c FROM stats_cache;" --json | jq -r '.[0].results[0].c')
+          {
+            echo "## 🗑️ Purge stats_cache"
+            echo ""
+            echo "- rows ก่อน purge: **$before**"
+            echo "- rows หลัง purge: **$after**"
+            echo ""
+            echo "> Cloudflare edge cache (caches.default) มี TTL แยกออกไป — ถ้าต้องเลี่ยง, ใส่ query string ใหม่ในคำขอ เช่น ?_=v$(date +%s)"
+          } >> "$GITHUB_STEP_SUMMARY"
