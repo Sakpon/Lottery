@@ -1005,8 +1005,9 @@ main { flex: 1; padding-bottom: var(--s-12); }
 }
 .disclaimer {
   padding: var(--s-4);
-  margin: var(--s-8) 0 0;
-  background: var(--color-surface-3);
+  margin-top: var(--s-8);
+  background: var(--color-bg-elevated);
+  border: 0.5px solid var(--color-border);
   border-radius: var(--r-lg);
   font-size: var(--fs-sm);
   color: var(--color-text-muted);
